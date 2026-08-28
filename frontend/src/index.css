@@ -1,0 +1,211 @@
+@import "tailwindcss";
+@import "./fonts/sarvam.css";
+
+/*
+ * Global document foundation only.
+ * Component styling and detailed design tokens live in their owning files.
+ */
+
+:root {
+  color-scheme: dark;
+
+  --cp-bg: #0f0f12;
+  --cp-surface: #15151a;
+  --cp-surface-raised: #1d1c24;
+  --cp-border: #2a2933;
+  --cp-border-strong: #393747;
+  --cp-text: #f4f2f8;
+  --cp-text-muted: #b8b4c7;
+  --cp-accent: #a78bfa;
+  --cp-accent-soft: rgba(167, 139, 250, 0.24);
+  --cp-focus: #c4b5fd;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+html {
+  background-color: var(--cp-bg);
+}
+
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background-color: var(--cp-bg);
+  color: var(--cp-text);
+  font-family: "Matter", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+:where(a, button, input, textarea, select, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--cp-focus);
+  outline-offset: 2px;
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes wave {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes recordingDot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* Native range control foundation for settings surfaces. */
+.settings-slider {
+  width: 100%;
+  height: 24px;
+  accent-color: var(--cp-accent);
+  color: var(--cp-accent);
+  background: transparent;
+  cursor: pointer;
+}
+
+.settings-slider:focus-visible {
+  outline: 2px solid var(--cp-focus);
+  outline-offset: 4px;
+}
+
+.settings-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background-color: var(--cp-border);
+}
+
+.settings-slider::-webkit-slider-thumb {
+  cursor: grab;
+}
+
+.settings-slider:active::-webkit-slider-thumb {
+  cursor: grabbing;
+}
+
+.settings-slider::-moz-range-track {
+  height: 6px;
+  border: 0;
+  border-radius: 9999px;
+  background-color: var(--cp-border);
+}
+
+.settings-slider::-moz-range-progress {
+  height: 6px;
+  border-radius: 9999px;
+  background-color: var(--cp-accent-soft);
+}
+
+.settings-slider::-moz-range-thumb {
+  border-color: var(--cp-border-strong);
+  background-color: var(--cp-text);
+  cursor: grab;
+}
+
+/* Keep workspaces visually clean while preserving scroll behavior. */
+*::-webkit-scrollbar {
+  display: none;
+}
+
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
