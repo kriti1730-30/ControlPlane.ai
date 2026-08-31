@@ -25,7 +25,7 @@ from app.checks.bias_sentinel import sentinel_log
 from app.contracts import CheckResult, ControlEvent, Envelope, to_control_event
 from app.db.sql_store import store
 from app.event_bus import bus
-from app.llm.client import LLMUnavailable, resolve_check_provider, resolve_model, structured_call
+from app.llm.client import LLMUnavailable, resolve_check_model, resolve_check_provider, resolve_model, structured_call
 
 GENERATION_SCHEMA = {
     "type": "object",
@@ -112,7 +112,9 @@ async def run_pipeline(
     already returned run_id to the client before this even starts."""
     record = store.get(run_id)
     provider, model = resolve_model(model_label)
-    check_provider = resolve_check_provider()  # may differ from the generation provider —
+    check_provider = resolve_check_provider()
+    check_model = resolve_check_model(check_provider) if check_provider else None
+    # may differ from the generation provider —
                                                 # checks use whatever key IS configured, even if
                                                 # the user picked a model for generation we can't reach
     envelope = Envelope(run_id=run_id, task=task, model_label=model_label)
@@ -195,7 +197,7 @@ async def run_pipeline(
         regenerated = await stage5_agentic.regenerate_grounded(envelope, provider, model)
         if regenerated:
             envelope.draft_output = regenerated  # THE actual fix — really replaces the draft
-        consistency_result = await stage5_agentic.self_consistency(envelope, check_provider, model)
+        consistency_result = await stage5_agentic.self_consistency(envelope, check_provider, check_model)
         consistency_decision = await emit_and_check_escalate(consistency_result)
         if consistency_decision == "deny":
             await store.update_state(run_id, state="blocked", final_output="Denied after low-consistency review.")

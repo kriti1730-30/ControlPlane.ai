@@ -25,7 +25,7 @@ def _spawn(coro) -> None:
 
 class RunRequest(BaseModel):
     message: str
-    model: str = "Claude"
+    model: str = "gemini"  # default to the provider we have a live key for, if any
     mode: Optional[Literal["plan", "build"]] = None
 
 
