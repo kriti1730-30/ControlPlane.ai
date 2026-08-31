@@ -19,7 +19,7 @@ load_dotenv()  # fixes: .env was never actually loaded into the process before
 MODEL_LABEL_MAP: dict[str, tuple[str, str]] = {
     "Claude": ("anthropic", "claude-sonnet-4-6"),
     "GPT": ("openai", "gpt-5.1"),
-    "Gemini": ("gemini", "gemini-2.5-flash"),
+    "Gemini": ("gemini", "gemini-3.6-flash"),
 }
 
 # Fast, cheap models for Tier-1 classification-style checks — deliberately
@@ -28,7 +28,7 @@ MODEL_LABEL_MAP: dict[str, tuple[str, str]] = {
 FAST_MODEL_BY_PROVIDER = {
     "anthropic": "claude-haiku-4-5-20251001",
     "openai": "gpt-5.1-mini",
-    "gemini": "gemini-2.5-flash-lite",
+    "gemini": "gemini-3.5-flash-lite",
 }
 
 
@@ -41,6 +41,9 @@ def resolve_model(model_label: str) -> tuple[str, str]:
     real (provider, model) pair. This is the one place that mapping lives."""
     return MODEL_LABEL_MAP.get(model_label, MODEL_LABEL_MAP["Claude"])
 
+def resolve_check_model(provider: str) -> str:
+    """Return the fast model used by ControlPlane checks for a provider."""
+    return FAST_MODEL_BY_PROVIDER[provider]
 
 _clients: dict[str, Any] = {}
 
