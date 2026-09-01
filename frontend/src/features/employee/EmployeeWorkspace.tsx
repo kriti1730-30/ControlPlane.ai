@@ -6,7 +6,6 @@ import {
   X,
 } from 'lucide-react';
 import {
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -22,6 +21,13 @@ import type {
   ControlEvent,
   HistoricalRun,
 } from './types';
+import {
+  connectRunSocket,
+  createRun,
+  getRun,
+  getRunEvents,
+  intervene,
+} from './employeeApi';
 
 
 
@@ -323,7 +329,7 @@ export default function EmployeeWorkspace() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [events, setEvents] = useState<ControlEvent[]>([]);
   const [input, setInput] = useState('');
-  const [model, setModel] = useState('Claude');
+  const [model, setModel] = useState('Gemini');
   const [modelOpen, setModelOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<
   'research' | 'debugging' | 'analysis' | 'testing' | null
@@ -336,16 +342,10 @@ export default function EmployeeWorkspace() {
   const [humanDecision, setHumanDecision] = useState<
     'approve' | 'deny' | null
   >(null);
+  const [runId, setRunId] = useState<string | null>(null);
 
-  const timers = useRef<number[]>([]);
+  const socketRef = useRef<WebSocket | null>(null);
 
-  useEffect(() => {
-    return () => {
-      timers.current.forEach((timer) =>
-        window.clearTimeout(timer),
-      );
-    };
-  }, []);
 
   const interventionEvent = useMemo(
     () =>
@@ -359,179 +359,142 @@ export default function EmployeeWorkspace() {
 
 
   function clearRun() {
-    timers.current.forEach((timer) => window.clearTimeout(timer));
-    timers.current = [];
+  socketRef.current?.close();
+  socketRef.current = null;
 
-    setMessages([]);
-    setEvents([]);
-    setRunState('idle');
-    setActiveStage(null);
-    setHumanDecision(null);
-  }
+  setMessages([]);
+  setEvents([]);
+  setRunState('idle');
+  setActiveStage(null);
+  setHumanDecision(null);
+  setRunId(null);
+}
 
-  function startRun(prompt: string) {
-    if (!prompt.trim()) return;
-    if (runState === 'running') return;
+  async function startRun(prompt: string) {
+  const trimmedPrompt = prompt.trim();
 
-    clearRun();
+  if (!trimmedPrompt) return;
+  if (runState === 'running') return;
 
-    const runId = `CP-${Math.floor(
-      10000 + Math.random() * 89999,
-    )}`;
+  socketRef.current?.close();
+  socketRef.current = null;
 
-    setMessages([
+  setMessages([
+    {
+      id: `local-${Date.now()}-user`,
+      role: 'user',
+      content: trimmedPrompt,
+    },
+  ]);
+
+  setEvents([]);
+  setHumanDecision(null);
+  setActiveStage(null);
+  setRunState('running');
+
+  try {
+    const created = await createRun(trimmedPrompt, model);
+
+    setRunId(created.run_id);
+
+    const addEvent = (event: ControlEvent) => {
+      setActiveStage(event.stage);
+
+      setEvents((current) => {
+        if (current.some((existing) => existing.id === event.id)) {
+          return current;
+        }
+
+        return [...current, event];
+      });
+
+      if (event.status === 'blocked') {
+        setRunState('blocked');
+      }
+    };
+
+    socketRef.current = connectRunSocket(created.run_id, {
+      onOpen: () => {
+        // Catch any events emitted between POST /runs and WebSocket subscription.
+        void getRunEvents(created.run_id)
+          .then((history) => {
+            history.forEach(addEvent);
+          })
+          .catch((error) => {
+            console.error('Failed to replay run events:', error);
+          });
+      },
+
+      onEvent: (event) => {
+        addEvent(event);
+
+        if (event.stage === 7 && event.status === 'passed') {
+          void getRun(created.run_id)
+            .then((run) => {
+              if (run.state === 'blocked') {
+                setRunState('blocked');
+                return;
+              }
+
+              setRunState('completed');
+
+              const finalOutput = run.final_output;
+
+              if (typeof finalOutput === 'string' && finalOutput.trim()) {
+                setMessages((current) => {
+                  const alreadyShown = current.some(
+                    (message) =>
+                      message.id === `${created.run_id}-assistant`,
+                  );
+
+                  if (alreadyShown) {
+                    return current;
+                  }
+
+                  return [
+                    ...current,
+                    {
+                      id: `${created.run_id}-assistant`,
+                      role: 'assistant',
+                      content: finalOutput,
+                    },
+                  ];
+                });
+              }
+            })
+            .catch((error) => {
+              console.error(
+                'Failed to fetch completed run:',
+                error,
+              );
+            });
+        }
+      },
+
+      onError: () => {
+        console.error('ControlPlane WebSocket error');
+      },
+
+      onClose: () => {
+        console.log('ControlPlane WebSocket closed');
+      },
+    });
+  } catch (error) {
+    console.error('Failed to start ControlPlane run:', error);
+
+    setRunState('blocked');
+
+    setMessages((current) => [
+      ...current,
       {
-        id: `${runId}-user`,
-        role: 'user',
-        content: prompt.trim(),
+        id: `local-${Date.now()}-error`,
+        role: 'assistant',
+        content:
+          'ControlPlane could not start this run. Please check that the backend is running.',
       },
     ]);
-
-    setRunState('running');
-
-    const schedule: Array<{
-      delay: number;
-      event: Omit<ControlEvent, 'id'>;
-    }> = [
-      {
-        delay: 350,
-        event: {
-          stage: 1,
-          title: 'Identity verified',
-          description:
-            'Employee identity, tenant and jurisdiction context verified.',
-          status: 'passed',
-          decision: 'ALLOW',
-          metric: 'tenant match · 1.00',
-        },
-      },
-      {
-        delay: 1050,
-        event: {
-          stage: 2,
-          title: 'Risk profile created',
-          description:
-            'The request has been classified before deeper execution begins.',
-          status: 'passed',
-          decision: 'ALLOW',
-          metric: 'impact · MEDIUM',
-        },
-      },
-      {
-        delay: 1850,
-        event: {
-          stage: 3,
-          title: 'Enterprise sources retrieved',
-          description:
-            'Authorized enterprise sources are being checked for provenance.',
-          status: 'running',
-          metric: '3 sources',
-        },
-      },
-      {
-        delay: 2850,
-        event: {
-          stage: 3,
-          title: 'Sensitive fields detected',
-          description:
-            'Unnecessary employee-level information was found in the retrieved context.',
-          status: 'fixed',
-          decision: 'FIX',
-          metric: '4 fields removed',
-          action: 'Sanitized context rebuilt',
-        },
-      },
-      {
-        delay: 3650,
-        event: {
-          stage: 4,
-          title: 'Context assembled',
-          description:
-            'Sanitized evidence was compressed and prepared for model execution.',
-          status: 'passed',
-          decision: 'ALLOW',
-          metric: '5,260 tokens',
-        },
-      },
-      {
-        delay: 4700,
-        event: {
-          stage: 5,
-          title: 'Agentic analysis completed',
-          description:
-            'The agent compared the relevant data and generated candidate findings.',
-          status: 'passed',
-          metric: '7 agent steps',
-        },
-      },
-      {
-        delay: 5700,
-        event: {
-          stage: 6,
-          title: 'Unsupported claim repaired',
-          description:
-            'One generated statement was stronger than the available evidence justified.',
-          status: 'fixed',
-          decision: 'FIX',
-          metric: 'support · 0.46',
-          action: 'Claim regenerated',
-        },
-      },
-      {
-        delay: 6700,
-        event: {
-          stage: 6,
-          title: 'Final response verified',
-          description:
-            'Final claims, sensitive content handling and policy constraints passed.',
-          status: 'passed',
-          decision: 'ALLOW',
-          metric: 'support · 0.93',
-        },
-      },
-      {
-        delay: 7700,
-        event: {
-          stage: 7,
-          title: 'Outcome recorded',
-          description:
-            'Run outcome and interventions were recorded for future calibration.',
-          status: 'passed',
-          metric: 'recorded',
-        },
-      },
-    ];
-
-    timers.current = schedule.map(({ delay, event }) =>
-      window.setTimeout(() => {
-        setActiveStage(event.stage);
-
-        setEvents((current) => [
-          ...current,
-          {
-            ...event,
-            id: `${runId}-${current.length + 1}`,
-          },
-        ]);
-      }, delay),
-    );
-
-    timers.current.push(
-      window.setTimeout(() => {
-        setRunState('completed');
-
-        setMessages((current) => [
-          ...current,
-          {
-            id: `${runId}-assistant`,
-            role: 'assistant',
-            content:
-              'The analysis is complete. ControlPlane removed unnecessary employee-level data before generation and repaired one unsupported claim before delivery.',
-          },
-        ]);
-      }, 8050),
-    );
   }
+}
 
   function submitPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -545,68 +508,55 @@ export default function EmployeeWorkspace() {
   }
 
   function loadHistory(run: HistoricalRun) {
-    timers.current.forEach((timer) => window.clearTimeout(timer));
-    timers.current = [];
+  socketRef.current?.close();
+  socketRef.current = null;
 
-    setMessages(run.messages);
-    setEvents(run.events);
-    setModel(run.model);
-    setRunState(
-      run.events.some((event) => event.status === 'blocked')
-        ? 'blocked'
-        : 'completed',
-    );
+  setMessages(run.messages);
+  setEvents(run.events);
+  setModel(run.model);
+  setRunState(
+    run.events.some((event) => event.status === 'blocked')
+      ? 'blocked'
+      : 'completed',
+  );
 
-    const lastEvent = run.events[run.events.length - 1];
-    setActiveStage(lastEvent?.stage ?? null);
-    setHistoryOpen(false);
-    setHumanDecision(null);
-  }
+  const lastEvent = run.events[run.events.length - 1];
+  setActiveStage(lastEvent?.stage ?? null);
+  setHistoryOpen(false);
+  setHumanDecision(null);
+  setRunId(null);
+}
 
-  function approveIntervention() {
-    if (!interventionEvent) return;
+  async function approveIntervention() {
+    if (!interventionEvent || !runId) return;
 
+    // Hide the card immediately (the JSX condition checks `!humanDecision`) —
+    // the real "Human approval recorded" event will arrive over the socket
+    // moments later from the backend itself; we don't synthesize it here.
     setHumanDecision('approve');
     setRunState('running');
 
-    setEvents((current) => [
-      ...current,
-      {
-        id: `${Date.now()}-human-approve`,
-        stage: interventionEvent.stage,
-        title: 'Human approval recorded',
-        description:
-          'Employee approved continuation and ControlPlane resumed the workflow.',
-        status: 'passed',
-        decision: 'ALLOW',
-        action: 'Workflow resumed',
-      },
-    ]);
-
-    window.setTimeout(() => {
-      setRunState('completed');
-    }, 700);
+    try {
+      await intervene(runId, 'approve');
+    } catch (error) {
+      console.error('Failed to approve intervention:', error);
+      setHumanDecision(null);
+      setRunState('blocked');
+    }
   }
 
-  function denyIntervention() {
-    if (!interventionEvent) return;
+  async function denyIntervention() {
+    if (!interventionEvent || !runId) return;
 
     setHumanDecision('deny');
-    setRunState('blocked');
 
-    setEvents((current) => [
-      ...current,
-      {
-        id: `${Date.now()}-human-deny`,
-        stage: interventionEvent.stage,
-        title: 'Human decision: blocked',
-        description:
-          'The proposed action was stopped before it could execute.',
-        status: 'blocked',
-        decision: 'BLOCK',
-        action: 'Workflow terminated',
-      },
-    ]);
+    try {
+      await intervene(runId, 'deny');
+      setRunState('blocked');
+    } catch (error) {
+      console.error('Failed to deny intervention:', error);
+      setHumanDecision(null);
+    }
   }
 
   return (
