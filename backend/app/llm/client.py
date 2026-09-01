@@ -35,6 +35,15 @@ FAST_MODEL_BY_PROVIDER = {
 class LLMUnavailable(Exception):
     pass
 
+class ProviderRateLimited(Exception):
+    """A real 429/quota response from the provider — distinct from
+    LLMUnavailable (no key configured) and from any other provider error.
+    Carries retry_after so callers can surface it, not just a generic
+    failure message."""
+    def __init__(self, provider: str, retry_after: Optional[float] = None):
+        self.provider = provider
+        self.retry_after = retry_after
+        super().__init__(f"{provider} rate-limited" + (f", retry after {retry_after}s" if retry_after else ""))
 
 def resolve_model(model_label: str) -> tuple[str, str]:
     """Turns the frontend's 'Claude'/'GPT'/'Gemini' selector value into a
