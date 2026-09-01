@@ -16,7 +16,7 @@ empty list nothing ever fills.
 from typing import Optional
 
 from app.contracts import CheckResult, Envelope
-from app.llm.client import LLMUnavailable, free_text_call, structured_call
+from app.llm.client import LLMUnavailable, ProviderRateLimited, free_text_call, structured_call
 
 ENTAILMENT_SCHEMA = {
     "type": "object",
@@ -89,28 +89,58 @@ async def regenerate_grounded(envelope: Envelope, provider: Optional[str], model
         return None
 
 
-async def self_consistency(envelope: Envelope, provider: Optional[str], model: Optional[str], n: int = 3) -> CheckResult:
+def _agrees(a: str, b: str) -> bool:
+    """Cheap pairwise agreement check — token-overlap ratio, not exact match."""
+    a_tokens, b_tokens = set(a.lower().split()), set(b.lower().split())
+    if not a_tokens or not b_tokens:
+        return a.strip()[:50] == b.strip()[:50]
+    return len(a_tokens & b_tokens) / max(len(a_tokens), len(b_tokens)) > 0.4
+
+
+async def self_consistency(envelope: Envelope, provider: Optional[str], model: Optional[str]) -> CheckResult:
+    """
+    llm-call-efficiency: was n=3 up front on every call. Now n=1 for the
+    ordinary case (the new sample agrees with the original draft — done,
+    one call spent) and only escalates to a second sample (n=2 max) when
+    the first one disagrees, which is genuinely the only case where a
+    second data point changes the decision.
+    """
     if not provider:
         return CheckResult(check_id="self_consistency", stage=5, mechanism="function", action="escalate",
                             title="Consistency check unavailable",
                             description="No live model configured to resample — escalating for human review.",
                             live=False)
     try:
-        samples = [await free_text_call(
+        first_sample = await free_text_call(
             system_prompt="Answer concisely based only on the given context.",
             user_prompt=envelope.task, provider=provider, model=model, max_tokens=200,
-        ) for _ in range(n)]
-        unique_ratio = len(set(s.strip()[:50] for s in samples)) / n
-        if unique_ratio > 0.6:
-            return CheckResult(check_id="self_consistency", stage=5, mechanism="llm", action="escalate",
-                                title="Low agreement across resamples",
-                                description="Regenerating the same request produced meaningfully "
-                                            "different answers — genuine model uncertainty, not noise.",
-                                metric=f"agreement · {1 - unique_ratio:.2f}", live=True)
-        return CheckResult(check_id="self_consistency", stage=5, mechanism="llm", action="allow",
-                            title="Consistent across resamples",
-                            description="Resampled responses agreed closely.",
-                            metric=f"agreement · {1 - unique_ratio:.2f}", live=True)
+        )
+        if _agrees(first_sample, envelope.draft_output or ""):
+            return CheckResult(check_id="self_consistency", stage=5, mechanism="llm", action="allow",
+                                title="Consistent on resample",
+                                description="A single resample agreed closely with the original response.",
+                                metric="samples · 1", live=True)
+
+        # First resample disagreed with the original — worth exactly one
+        # more sample before deciding, never more than that.
+        second_sample = await free_text_call(
+            system_prompt="Answer concisely based only on the given context.",
+            user_prompt=envelope.task, provider=provider, model=model, max_tokens=200,
+        )
+        resamples_agree = _agrees(first_sample, second_sample)
+        return CheckResult(
+            check_id="self_consistency", stage=5, mechanism="llm", action="escalate",
+            title="Low agreement across resamples" if not resamples_agree else "Original answer diverges from resamples",
+            description=(
+                "Regenerating the same request produced meaningfully different answers — "
+                "genuine model uncertainty, not noise." if not resamples_agree else
+                "Two independent resamples agree with each other but differ from the original "
+                "answer, suggesting the original may be the outlier."
+            ),
+            metric="samples · 2", live=True,
+        )
+    except ProviderRateLimited:
+        raise
     except LLMUnavailable:
         return CheckResult(check_id="self_consistency", stage=5, mechanism="function", action="escalate",
                             title="Consistency check unavailable",
