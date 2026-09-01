@@ -30,6 +30,23 @@ import { useLayout } from './LayoutContext';
 
 const COLLAPSED_WIDTH = 64;
 const MOBILE_WIDTH = 280;
+const SESSION_STORAGE_KEY = 'controlplane_session';
+
+type SessionRole = 'employee' | 'support_operator';
+
+function readSessionRole(): SessionRole | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const stored = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!stored) return null;
+    const parsed = JSON.parse(stored) as { role?: string };
+    return parsed.role === 'employee' || parsed.role === 'support_operator'
+      ? parsed.role
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 type NavItem = {
   to: string;
@@ -44,32 +61,41 @@ const iconProps = {
   'aria-hidden': true as const,
 };
 
-const WORKSPACE_ITEMS: NavItem[] = [
+// Fix: both entries always rendered regardless of who signed in — an
+// Employee-role session saw Customer Operations too, and vice versa.
+// Filtered by session role at render time, below.
+const ALL_WORKSPACE_ITEMS: (NavItem & { forRole: SessionRole })[] = [
   {
     to: '/employee',
     label: 'Employee AI',
     icon: <BrainCircuit {...iconProps} />,
+    forRole: 'employee',
   },
   {
     to: '/customer-operations',
     label: 'Customer Operations',
     icon: <ShieldCheck {...iconProps} />,
+    forRole: 'support_operator',
   },
 ];
 
+// Fix: every workflow item pointed at the exact same route ('/employee'),
+// so clicking one while already on that page did nothing visible — it
+// wasn't a broken click handler, it was a same-page no-op navigation.
+// The query param is read by EmployeeWorkspace to actually open that task.
 const WORKFLOW_ITEMS: NavItem[] = [
   {
-    to: '/employee',
+    to: '/employee?task=research',
     label: 'Research',
     icon: <ClipboardList {...iconProps} />,
   },
   {
-    to: '/employee',
+    to: '/employee?task=debugging',
     label: 'Coding',
     icon: <Code2 {...iconProps} />,
   },
   {
-    to: '/employee',
+    to: '/employee?task=analysis',
     label: 'Data Analysis',
     icon: <BarChart3 {...iconProps} />,
   },
@@ -77,6 +103,13 @@ const WORKFLOW_ITEMS: NavItem[] = [
 
 export default function Sidebar() {
   const isMobile = useIsMobile();
+  const sessionRole = readSessionRole();
+
+  // If no session role is found (shouldn't happen post-login, but fail
+  // toward showing both rather than showing neither) fall back to all.
+  const workspaceItems = sessionRole
+    ? ALL_WORKSPACE_ITEMS.filter((item) => item.forRole === sessionRole)
+    : ALL_WORKSPACE_ITEMS;
 
   const {
     collapsed,
@@ -176,7 +209,7 @@ export default function Sidebar() {
           >
             <NavGroup
               label="Workspace"
-              items={WORKSPACE_ITEMS}
+              items={workspaceItems}
               collapsed={effectiveCollapsed}
             />
 
@@ -191,7 +224,7 @@ export default function Sidebar() {
               collapsed={effectiveCollapsed}
               items={[
                 {
-                  to: '/employee',
+                  to: '/employee?history=open',
                   label: 'History',
                   icon: <History {...iconProps} />,
                 },
@@ -217,7 +250,7 @@ export default function Sidebar() {
           paddingBottom: SPACE[4],
         }}
       >
-        <ProfileRow collapsed={effectiveCollapsed} />
+        <ProfileRow collapsed={effectiveCollapsed} role={sessionRole} />
       </div>
     </aside>
   );
@@ -624,9 +657,16 @@ function SettingsRow({
 
 function ProfileRow({
   collapsed,
+  role,
 }: {
   collapsed: boolean;
+  role: SessionRole | null;
 }) {
+  const profile =
+    role === 'support_operator'
+      ? { initial: 'S', title: 'Support Operator', subtitle: 'Customer Operations' }
+      : { initial: 'E', title: 'Employee', subtitle: 'Internal AI' };
+
   return (
     <div
       style={{
@@ -636,7 +676,7 @@ function ProfileRow({
     >
       <button
         type="button"
-        title={collapsed ? 'Employee' : undefined}
+        title={collapsed ? profile.title : undefined}
         className="focus-visible:outline-none focus-visible:ring-2"
         style={{
           display: 'flex',
@@ -669,7 +709,7 @@ function ProfileRow({
             flexShrink: 0,
           }}
         >
-          E
+          {profile.initial}
         </span>
 
         {!collapsed && (
@@ -689,7 +729,7 @@ function ProfileRow({
                 lineHeight: LINE_HEIGHT.normal,
               }}
             >
-              Employee
+              {profile.title}
             </span>
 
             <span
@@ -703,7 +743,7 @@ function ProfileRow({
                 lineHeight: LINE_HEIGHT.normal,
               }}
             >
-              Internal AI
+              {profile.subtitle}
             </span>
           </span>
         )}
