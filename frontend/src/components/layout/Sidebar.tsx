@@ -1,10 +1,12 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
   BrainCircuit,
   ChevronRight,
   ClipboardList,
   History,
+  LogOut,
+  Repeat,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -47,6 +49,20 @@ function readSessionRole(): SessionRole | null {
     return null;
   }
 }
+
+function clearSession(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(SESSION_STORAGE_KEY);
+  } catch {
+    // best-effort — nothing else to fall back to for a demo session
+  }
+}
+
+const OTHER_WORKSPACE: Record<SessionRole, { to: string; label: string }> = {
+  employee: { to: '/customer-operations', label: 'Customer Operations' },
+  support_operator: { to: '/employee', label: 'Employee AI' },
+};
 
 type NavItem = {
   to: string;
@@ -103,6 +119,7 @@ const WORKFLOW_ITEMS: NavItem[] = [
 
 export default function Sidebar() {
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
   const sessionRole = readSessionRole();
 
   // If no session role is found (shouldn't happen post-login, but fail
@@ -250,7 +267,14 @@ export default function Sidebar() {
           paddingBottom: SPACE[4],
         }}
       >
-        <ProfileRow collapsed={effectiveCollapsed} role={sessionRole} />
+        <ProfileRow
+          collapsed={effectiveCollapsed}
+          role={sessionRole}
+          onSignOut={() => {
+            clearSession();
+            navigate('/', { replace: true });
+          }}
+        />
       </div>
     </aside>
   );
@@ -658,25 +682,92 @@ function SettingsRow({
 function ProfileRow({
   collapsed,
   role,
+  onSignOut,
 }: {
   collapsed: boolean;
   role: SessionRole | null;
+  onSignOut: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+
   const profile =
     role === 'support_operator'
       ? { initial: 'S', title: 'Support Operator', subtitle: 'Customer Operations' }
       : { initial: 'E', title: 'Employee', subtitle: 'Internal AI' };
 
+  const other = role ? OTHER_WORKSPACE[role] : null;
+
   return (
     <div
       style={{
+        position: 'relative',
         borderTop: `1px solid ${COLORS.border.DEFAULT}`,
         paddingTop: SPACE[4],
       }}
     >
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: 'absolute',
+            bottom: '100%',
+            left: collapsed ? 0 : SPACE[6],
+            right: collapsed ? undefined : SPACE[6],
+            marginBottom: SPACE[2],
+            width: collapsed ? 220 : undefined,
+            borderRadius: RADIUS.lg,
+            border: `1px solid ${COLORS.border.DEFAULT}`,
+            backgroundColor: '#FFFFFF',
+            boxShadow: '0 14px 35px rgba(0,0,0,0.12)',
+            padding: SPACE[2],
+            zIndex: 60,
+          }}
+        >
+          {other && (
+            <NavLink
+              to={other.to}
+              onClick={() => setOpen(false)}
+              role="menuitem"
+              style={{ ...menuItemStyle, textDecoration: 'none' }}
+            >
+              <Repeat size={14} strokeWidth={1.8} aria-hidden />
+              <span>Switch to {other.label}</span>
+            </NavLink>
+          )}
+
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            style={menuItemStyle}
+          >
+            <Settings size={14} strokeWidth={1.8} aria-hidden />
+            <span>Settings</span>
+          </button>
+
+          <div style={{ height: 1, backgroundColor: COLORS.border.DEFAULT, margin: `${SPACE[2]}px 0` }} />
+
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onSignOut();
+            }}
+            style={{ ...menuItemStyle, color: '#B3261E' }}
+          >
+            <LogOut size={14} strokeWidth={1.8} aria-hidden />
+            <span>Sign out</span>
+          </button>
+        </div>
+      )}
+
       <button
         type="button"
         title={collapsed ? profile.title : undefined}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
         className="focus-visible:outline-none focus-visible:ring-2"
         style={{
           display: 'flex',
@@ -717,6 +808,7 @@ function ProfileRow({
             style={{
               minWidth: 0,
               textAlign: 'left',
+              flex: 1,
             }}
           >
             <span
@@ -751,3 +843,21 @@ function ProfileRow({
     </div>
   );
 }
+
+const menuItemStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: SPACE[3],
+  width: '100%',
+  padding: `${SPACE[3]}px ${SPACE[3]}px`,
+  border: 'none',
+  borderRadius: RADIUS.md,
+  backgroundColor: 'transparent',
+  color: COLORS.ink[700],
+  fontFamily: FONTS.sans,
+  fontSize: FONT_SIZE.sm,
+  fontWeight: FONT_WEIGHT.regular,
+  textAlign: 'left',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+};
