@@ -6,11 +6,13 @@ import {
   X,
 } from 'lucide-react';
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
   type FormEvent,
 } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import Layout from '../../components/layout/Layout';
 import PageHeader from '../../components/layout/PageHeader';
@@ -373,6 +375,27 @@ export default function EmployeeWorkspace() {
   'research' | 'debugging' | 'analysis' | 'testing' | null
 >(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Fix: the sidebar's Research/Coding/Data Analysis/History links all
+  // pointed at this same route with nothing to actually trigger their
+  // effect — they now carry a query param this reads once, then clears
+  // (so clicking the same sidebar link again still re-triggers it).
+  useEffect(() => {
+    const task = searchParams.get('task');
+    const validTasks = ['research', 'debugging', 'analysis', 'testing'] as const;
+    if (task && (validTasks as readonly string[]).includes(task)) {
+      setSelectedTask(task as (typeof validTasks)[number]);
+    }
+    if (searchParams.get('history') === 'open') {
+      setHistoryOpen(true);
+    }
+    if (task || searchParams.get('history')) {
+      setSearchParams({}, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   const [runState, setRunState] = useState<
     'idle' | 'running' | 'completed' | 'blocked'
   >('idle');
