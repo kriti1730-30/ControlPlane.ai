@@ -6,7 +6,6 @@ import {
   ClipboardList,
   History,
   LogOut,
-  Repeat,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -115,6 +114,11 @@ const WORKFLOW_ITEMS: NavItem[] = [
     label: 'Data Analysis',
     icon: <BarChart3 {...iconProps} />,
   },
+  {
+    to: '/employee?task=production_change',
+    label: 'Production Change',
+    icon: <ShieldCheck {...iconProps} />,
+  },
 ];
 
 export default function Sidebar() {
@@ -122,11 +126,13 @@ export default function Sidebar() {
   const navigate = useNavigate();
   const sessionRole = readSessionRole();
 
-  // If no session role is found (shouldn't happen post-login, but fail
-  // toward showing both rather than showing neither) fall back to all.
-  const workspaceItems = sessionRole
-    ? ALL_WORKSPACE_ITEMS.filter((item) => item.forRole === sessionRole)
-    : ALL_WORKSPACE_ITEMS;
+  // Fix: both workspaces are real, finished features here, not a role-
+  // gated production system — hiding one behind the other's login was
+  // actively confusing (switching workspaces via the profile menu changed
+  // the page but not the stored role, so the nav kept showing only the
+  // original one). Always show both; sessionRole is still used for the
+  // profile row's own identity label further down.
+  const workspaceItems = ALL_WORKSPACE_ITEMS;
 
   const {
     collapsed,
@@ -695,8 +701,6 @@ function ProfileRow({
       ? { initial: 'S', title: 'Support Operator', subtitle: 'Customer Operations' }
       : { initial: 'E', title: 'Employee', subtitle: 'Internal AI' };
 
-  const other = role ? OTHER_WORKSPACE[role] : null;
-
   return (
     <div
       style={{
@@ -723,18 +727,6 @@ function ProfileRow({
             zIndex: 60,
           }}
         >
-          {other && (
-            <NavLink
-              to={other.to}
-              onClick={() => setOpen(false)}
-              role="menuitem"
-              style={{ ...menuItemStyle, textDecoration: 'none' }}
-            >
-              <Repeat size={14} strokeWidth={1.8} aria-hidden />
-              <span>Switch to {other.label}</span>
-            </NavLink>
-          )}
-
           <button
             type="button"
             role="menuitem"
