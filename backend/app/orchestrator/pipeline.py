@@ -108,15 +108,40 @@ async def run_pipeline(
     model_label: str,
     mode_hint: Optional[str] = None,
 ) -> None:
+    """Thin safety wrapper: catches anything _run_pipeline_inner doesn't
+    handle itself, so a bug in any stage becomes a visible blocked run
+    instead of a silently-dead background task. This is the direct fix for
+    'backend errors are structured and visible, not swallowed' — no
+    LangGraph required, just not letting exceptions fall through
+    fire-and-forget asyncio.create_task()."""
+    try:
+        await _run_pipeline_inner(run_id, actor_type, task, model_label, mode_hint)
+    except Exception as exc:
+        await _emit(run_id, CheckResult(
+            check_id="pipeline_error", stage=1, mechanism="function", action="block",
+            title="Pipeline error",
+            description=f"Unhandled {type(exc).__name__}: {exc}",
+        ))
+        await store.update_state(run_id, state="blocked",
+                                  final_output=f"Internal error: {type(exc).__name__}: {exc}")
+
+
+async def _run_pipeline_inner(
+    run_id: str,
+    actor_type: Literal["employee", "customer_support"],
+    task: str,
+    model_label: str,
+    mode_hint: Optional[str] = None,
+) -> None:
     """The background task. Publishes events as it goes; the caller has
     already returned run_id to the client before this even starts."""
     record = store.get(run_id)
     provider, model = resolve_model(model_label)
     check_provider = resolve_check_provider()
     check_model = resolve_check_model(check_provider) if check_provider else None
-    # may differ from the generation provider —
-                                                # checks use whatever key IS configured, even if
-                                                # the user picked a model for generation we can't reach
+    # check_provider/model may differ from the generation provider/model —
+    # checks use whatever key IS configured, even if the user picked a
+    # model for generation we can't reach
     envelope = Envelope(run_id=run_id, task=task, model_label=model_label)
 
     async def emit_and_check_block(result: CheckResult) -> bool:
@@ -151,7 +176,6 @@ async def run_pipeline(
         envelope.risk.mode = mode_hint
     if await emit_and_check_block(risk_result):
         return
-
     # --- Stage 3 ---
     envelope.retrieved_context = _retrieve(task)
     if await emit_and_check_block(stage3_retrieval.acl_check(envelope)):
@@ -167,13 +191,11 @@ async def run_pipeline(
     await _emit(run_id, stage4_assembly.temporal_check(envelope))
     await _emit(run_id, stage4_assembly.context_assembly(envelope))
 
-    if envelope.risk.mode == "plan":
-        await store.update_state(run_id, state="completed",
-                                  final_output="Plan acknowledged — no action taken yet. Awaiting build approval.")
-        await _emit(run_id, stage7_learning.record_outcome(envelope))
-        return
-
-    # --- The real model call: one structured call produces answer + actions together ---
+    # --- The real model call: BOTH plan and build modes call the model.
+    # `mode` no longer decides whether generation happens — it only decides,
+    # after generation, whether any proposed_actions are allowed to survive
+    # into Stage 5's impact gate. A "plan" request still gets a real,
+    # LLM-generated plan back; it just can never trigger a real action.
     context_text = "\n".join(c["text"] for c in envelope.retrieved_context)
     try:
         gen = await structured_call(
@@ -181,12 +203,28 @@ async def run_pipeline(
             user_prompt=task, json_schema=GENERATION_SCHEMA, provider=provider, model=model,
         )
         envelope.draft_output = gen["answer"]
-        envelope.proposed_actions = [a for a in gen["proposed_actions"] if a.get("tool") != "none"]
+        if envelope.risk.mode == "plan":
+            envelope.proposed_actions = []  # plan mode: never let a proposed action through
+        else:
+            envelope.proposed_actions = [a for a in gen["proposed_actions"] if a.get("tool") != "none"]
     except LLMUnavailable:
         envelope.draft_output = (
             f"[No live '{provider}' key configured] Acknowledged: {task}"
         )
         envelope.proposed_actions = []
+    except Exception as exc:
+        # Fix: this used to only catch LLMUnavailable — any real API error
+        # (bad key, rejected schema, quota, region block) fell through
+        # uncaught into a fire-and-forget asyncio task and vanished silently.
+        # Every failure is now a visible, terminal run state instead.
+        await _emit(run_id, CheckResult(
+            check_id="model_call", stage=5, mechanism="llm", action="block",
+            title="Model call failed",
+            description=f"The '{provider}' API call raised {type(exc).__name__}: {exc}",
+        ))
+        await store.update_state(run_id, state="blocked",
+                                  final_output=f"Model call failed: {type(exc).__name__}: {exc}")
+        return
 
     # --- Stage 5 ---
     entailment_result = await stage5_agentic.entailment_gate(envelope, check_provider)
