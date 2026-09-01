@@ -5,7 +5,6 @@ import {
   BriefcaseBusiness,
   Globe2,
   Headphones,
-  ShieldCheck,
 } from 'lucide-react';
 
 const JURISDICTION_STORAGE_KEY = 'controlplane_jurisdiction';
@@ -42,7 +41,7 @@ const DEMO_PASSWORD = 'demo123';
 const DEMO_IDENTITIES: DemoIdentity[] = [
   {
     key: 'employee',
-    label: 'Employee',
+    label: 'Employee credentials',
     description: 'Internal AI workspace',
     email: 'employee@controlplane.demo',
     password: DEMO_PASSWORD,
@@ -52,7 +51,7 @@ const DEMO_IDENTITIES: DemoIdentity[] = [
   },
   {
     key: 'support',
-    label: 'Support Operator',
+    label: 'Support operator credentials',
     description: 'Customer operations workspace',
     email: 'support@controlplane.demo',
     password: DEMO_PASSWORD,
@@ -229,8 +228,6 @@ export default function LoginPage() {
     setFieldErrors(nextFieldErrors);
 
     if (Object.keys(nextFieldErrors).length > 0) {
-
-
       setError('Complete the required fields to continue.');
       return;
     }
@@ -268,97 +265,54 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-svh bg-[var(--cp-bg)] text-[var(--cp-text)]">
-      <div className="mx-auto grid min-h-svh w-full max-w-[1440px] p-3 sm:p-4 lg:p-6">
-        <div className="grid min-h-[calc(100svh-1.5rem)] overflow-hidden rounded-[24px] border border-[var(--cp-border)] bg-[var(--cp-surface)] shadow-[0_24px_100px_rgba(0,0,0,0.35)] sm:min-h-[calc(100svh-2rem)] lg:grid-cols-[1.08fr_0.92fr]">
-          {/* LEFT — visual / brand panel */}
-          <section className="relative hidden min-h-[680px] overflow-hidden lg:flex">
+    <main className="min-h-screen overflow-y-auto bg-white px-2 py-3 text-[#292722] sm:px-4 sm:py-5">
+      <div className="mx-auto flex w-full justify-center">
+        <div
+          className="relative aspect-square w-full max-w-[1024px] overflow-hidden"
+          style={{ width: 'min(100%, calc(100vh - 28px))' }}
+        >
+          <img
+            src="/illustrations/login-hero.webp"
+            alt="Illustrated ControlPlane login scene"
+            className="absolute inset-0 h-full w-full object-contain select-none"
+            draggable={false}
+          />
+
+          {/* Real interactive controls, visually embedded in the computer monitor. */}
+          <section
+            aria-label="ControlPlane sign in"
+            className="absolute z-10"
+            style={{
+              left: '12.2%',
+              top: '44.8%',
+              width: '50.3%',
+              height: '37.5%',
+            }}
+          >
             <div
-              aria-hidden="true"
-              className="absolute inset-0"
-              style={{
-                background:
-                  'radial-gradient(circle at 48% 42%, rgba(145, 104, 255, 0.38), transparent 26%), radial-gradient(circle at 72% 24%, rgba(106, 76, 180, 0.24), transparent 30%), linear-gradient(145deg, #0d0b13 0%, #120d1d 48%, #09090b 100%)',
-              }}
-            />
-
-            <div
-              aria-hidden="true"
-              className="absolute -left-[12%] top-[18%] h-[62%] w-[70%] rounded-full opacity-70 blur-3xl"
-              style={{
-                background:
-                  'radial-gradient(circle, rgba(155, 110, 255, 0.36) 0%, rgba(77, 41, 131, 0.16) 42%, transparent 72%)',
-              }}
-            />
-
-            <div
-              aria-hidden="true"
-              className="absolute bottom-[-18%] right-[-12%] h-[62%] w-[58%] rounded-full opacity-55 blur-3xl"
-              style={{
-                background:
-                  'radial-gradient(circle, rgba(95, 69, 170, 0.28) 0%, transparent 70%)',
-              }}
-            />
-
-            <div className="relative z-10 flex h-full w-full flex-col justify-between p-8 sm:p-10 lg:p-12">
-              <div className="flex items-center gap-3">
-                <BrandMark compact />
-                <span className="text-sm font-medium tracking-[-0.01em] text-white">
-                  ControlPlane
-                </span>
-              </div>
-
-              <div className="max-w-[440px]">
-                
-
-                <h1 className="max-w-[420px] text-4xl font-semibold leading-[1.04] tracking-[-0.045em] text-white sm:text-5xl xl:text-[58px]">
-                  ControlPlane.ai
+              className="flex h-full w-full flex-col overflow-y-auto rounded-[18px] border border-[#d86726] bg-[#ff9448]/95 p-[4%] shadow-[0_10px_26px_rgba(151,70,25,0.25)] backdrop-blur-[1px] sm:rounded-[22px]"
+            >
+              <div className="mb-[3%]">
+                <h1 className="text-[clamp(14px,2.2vw,30px)] font-semibold leading-[0.98] tracking-[-0.035em] text-[#51200b]">
+                  Welcome,
                 </h1>
-
-                <p className="mt-6 max-w-[390px] text-sm leading-6 text-white/60 sm:text-[15px]">
-                  ControlPlane continuously observes enterprise AI workflows
-                  and applies the right level of control when evidence,
-                  authority, or consequence demands it.
+                <p className="mt-0.5 text-[clamp(10px,1.45vw,19px)] font-medium leading-tight text-[#6b2b10]">
+                  let&apos;s get signed in!
                 </p>
-              </div>
-
-              <div className="flex items-center gap-2 text-xs text-white/40">
-                <ShieldCheck size={14} aria-hidden />
-                <span>Controlled by policy. Auditable by design.</span>
-              </div>
-            </div>
-          </section>
-
-          {/* RIGHT — authentication */}
-          <section className="flex min-h-full items-center justify-center px-6 py-12 sm:px-10 lg:px-14 xl:px-20">
-            <div className="w-full max-w-[390px]">
-              <div className="mb-8">
-                <BrandMark className="lg:hidden" />
-
-                <div className="mt-7">
-                  <h2 className="text-[28px] font-semibold tracking-[-0.035em] sm:text-[32px]">
-                    Welcome back
-                  </h2>
-
-                  <p className="mt-2 text-sm leading-6 text-[var(--cp-text-muted)]">
-                    Sign in to continue to your enterprise workspace.
-                  </p>
-                </div>
               </div>
 
               <form
                 onSubmit={handleSubmit}
                 aria-describedby={error ? 'signin-error' : undefined}
-                className="space-y-5"
+                className="flex min-h-0 flex-1 flex-col gap-[3%]"
               >
                 <div>
                   <label
                     htmlFor="email"
-                    className="block text-[13px] font-medium text-[var(--cp-text)]"
+                    className="mb-1 block text-[clamp(7px,1vw,12px)] font-semibold text-[#54210d]"
                   >
-                    Work email or employee ID
+                    Work email / ID
                   </label>
-
                   <input
                     id="email"
                     name="email"
@@ -372,17 +326,14 @@ export default function LoginPage() {
                       clearFeedback();
                     }}
                     aria-invalid={Boolean(fieldErrors.email)}
-                    aria-describedby={
-                      fieldErrors.email ? 'email-error' : undefined
-                    }
+                    aria-describedby={fieldErrors.email ? 'email-error' : undefined}
                     placeholder="employee@controlplane.demo"
-                    className="mt-2 h-12 w-full rounded-[13px] border border-[var(--cp-border)] bg-[var(--cp-surface-raised)] px-4 text-sm text-[var(--cp-text)] outline-none transition placeholder:text-white/30 focus:border-[var(--cp-accent)] focus:ring-2 focus:ring-[var(--cp-accent-soft)]"
+                    className="h-[clamp(21px,3vw,40px)] w-full rounded-[clamp(6px,0.9vw,12px)] border border-[#efb48d] bg-white px-[3%] text-[clamp(8px,1.05vw,14px)] text-[#292722] outline-none placeholder:text-[#aaa79f] focus:border-[#8768dc] focus:ring-2 focus:ring-[#eeeaff]"
                   />
-
                   {fieldErrors.email && (
                     <p
                       id="email-error"
-                      className="mt-2 text-xs text-red-300"
+                      className="mt-1 text-[clamp(7px,0.85vw,11px)] text-red-700"
                     >
                       {fieldErrors.email}
                     </p>
@@ -392,11 +343,10 @@ export default function LoginPage() {
                 <div>
                   <label
                     htmlFor="password"
-                    className="block text-[13px] font-medium text-[var(--cp-text)]"
+                    className="mb-1 block text-[clamp(7px,1vw,12px)] font-semibold text-[#54210d]"
                   >
                     Password
                   </label>
-
                   <input
                     id="password"
                     name="password"
@@ -409,17 +359,14 @@ export default function LoginPage() {
                       clearFeedback();
                     }}
                     aria-invalid={Boolean(fieldErrors.password)}
-                    aria-describedby={
-                      fieldErrors.password ? 'password-error' : undefined
-                    }
+                    aria-describedby={fieldErrors.password ? 'password-error' : undefined}
                     placeholder="Enter password"
-                    className="mt-2 h-12 w-full rounded-[13px] border border-[var(--cp-border)] bg-[var(--cp-surface-raised)] px-4 text-sm text-[var(--cp-text)] outline-none transition placeholder:text-white/30 focus:border-[var(--cp-accent)] focus:ring-2 focus:ring-[var(--cp-accent-soft)]"
+                    className="h-[clamp(21px,3vw,40px)] w-full rounded-[clamp(6px,0.9vw,12px)] border border-[#efb48d] bg-white px-[3%] text-[clamp(8px,1.05vw,14px)] text-[#292722] outline-none placeholder:text-[#aaa79f] focus:border-[#8768dc] focus:ring-2 focus:ring-[#eeeaff]"
                   />
-
                   {fieldErrors.password && (
                     <p
                       id="password-error"
-                      className="mt-2 text-xs text-red-300"
+                      className="mt-1 text-[clamp(7px,0.85vw,11px)] text-red-700"
                     >
                       {fieldErrors.password}
                     </p>
@@ -430,47 +377,32 @@ export default function LoginPage() {
                   <p
                     id="signin-error"
                     role="alert"
-                    className="rounded-[12px] border border-red-500/30 bg-red-500/10 px-3.5 py-3 text-xs leading-5 text-red-200"
+                    className="rounded-[8px] border border-red-200 bg-red-50 px-2 py-1.5 text-[clamp(7px,0.9vw,11px)] leading-tight text-red-700"
                   >
                     {error}
                   </p>
                 )}
 
-                <button
-                  type="submit"
-                  disabled={isSubmitting || showJurisdictionModal}
-                  className="group flex h-12 w-full items-center justify-center gap-2 rounded-[13px] bg-[var(--cp-accent)] px-4 text-sm font-medium text-[#0d0b12] transition hover:brightness-105 active:scale-[0.995] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isSubmitting ? 'Signing in…' : 'Sign in'}
-                  {!isSubmitting && (
-                    <ArrowRight
-                      size={16}
-                      strokeWidth={2}
-                      aria-hidden
-                      className="transition-transform group-hover:translate-x-0.5"
-                    />
-                  )}
-                </button>
-              </form>
-
-              <div className="my-7 flex items-center gap-3">
-                <div className="h-px flex-1 bg-[var(--cp-border)]" />
-                <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--cp-text-muted)]">
-                  Demo
-                </span>
-                <div className="h-px flex-1 bg-[var(--cp-border)]" />
-              </div>
-
-              <div>
-                <div className="mb-3">
-                  <p className="text-[13px] font-medium">Use test credentials</p>
-                  <p className="mt-1 text-xs text-[var(--cp-text-muted)]">
-                    These accounts are for the prototype only.
-                  </p>
+                <div className="mt-auto">
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || showJurisdictionModal}
+                    className="group flex h-[clamp(21px,3vw,40px)] w-full items-center justify-center gap-1 rounded-[clamp(7px,1vw,12px)] border border-[#d86a27] bg-[#e8651d] px-2 text-[clamp(9px,1.25vw,16px)] font-semibold text-white shadow-[0_4px_0_rgba(166,68,19,0.18)] transition hover:bg-[#d95613] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isSubmitting ? 'Signing in…' : 'Go'}
+                    {!isSubmitting && (
+                      <ArrowRight
+                        size={14}
+                        strokeWidth={2.4}
+                        aria-hidden
+                        className="h-[0.9em] w-[0.9em] transition-transform group-hover:translate-x-0.5"
+                      />
+                    )}
+                  </button>
                 </div>
 
-                <div className="space-y-2">
-                  {DEMO_IDENTITIES.map((identity) => {
+                <div className="relative z-30 flex gap-[2.5%]">
+                  {DEMO_IDENTITIES.map((identity, index) => {
                     const Icon = identity.icon;
                     const selected = selectedDemo === identity.key;
 
@@ -482,44 +414,39 @@ export default function LoginPage() {
                         onClick={() => selectDemo(identity)}
                         disabled={showJurisdictionModal}
                         className={[
-                          'flex w-full items-center gap-3 rounded-[13px] border px-3.5 py-3 text-left transition',
-                          selected
-                            ? 'border-[var(--cp-accent)] bg-[var(--cp-accent-soft)]'
-                            : 'border-[var(--cp-border)] bg-transparent hover:border-[var(--cp-border-strong)] hover:bg-white/[0.025]',
+                          'flex min-w-0 flex-1 items-center justify-center gap-1 rounded-[clamp(6px,0.9vw,11px)] border px-1.5 py-[clamp(4px,0.7vw,9px)] text-center text-[clamp(7px,0.88vw,11px)] font-semibold transition',
+                          index === 0
+                            ? 'border-[#3797c8] bg-[#66c5ed] text-[#12354a] hover:bg-[#58b9e3]'
+                            : 'border-[#82a51d] bg-[#b9e63c] text-[#294006] hover:bg-[#addb2f]',
+                          selected ? 'ring-2 ring-white/80 ring-offset-1 ring-offset-[#ff9448]' : '',
                         ].join(' ')}
                       >
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-[var(--cp-border)] text-[var(--cp-accent)]">
-                          <Icon size={16} strokeWidth={1.8} aria-hidden />
+                        <Icon
+                          size={12}
+                          strokeWidth={2}
+                          aria-hidden
+                          className="h-[0.95em] w-[0.95em] shrink-0"
+                        />
+                        <span className="truncate">
+                          {index === 0 ? 'Demo Creds 1' : 'Demo Creds 2'}
                         </span>
-
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-sm font-medium">
-                            {identity.label}
-                          </span>
-                          <span className="mt-0.5 block text-xs text-[var(--cp-text-muted)]">
-                            {identity.description}
-                          </span>
-                        </span>
-
-                        {selected && (
-                          <span className="text-xs font-medium text-[var(--cp-accent)]">
-                            Selected
-                          </span>
-                        )}
                       </button>
                     );
                   })}
                 </div>
-              </div>
+              </form>
 
-              <div className="mt-8 flex items-center justify-between gap-3 text-[11px] text-[var(--cp-text-muted)]">
-                <span className="inline-flex items-center gap-1.5">
-                  <Globe2 size={13} aria-hidden />
+              <div className="mt-[2.5%] flex items-center justify-between gap-2 text-[clamp(6px,0.78vw,10px)] text-[#6b2b10]">
+                <span className="inline-flex min-w-0 items-center gap-1 truncate">
+                  <Globe2
+                    size={10}
+                    aria-hidden
+                    className="h-[1em] w-[1em] shrink-0"
+                  />
                   {jurisdiction
                     ? `${jurisdiction.label} · ${jurisdiction.code}`
                     : 'Region not confirmed'}
                 </span>
-
                 {jurisdiction && (
                   <button
                     type="button"
@@ -527,7 +454,7 @@ export default function LoginPage() {
                       setShowJurisdictionModal(true);
                       setShowManualJurisdiction(true);
                     }}
-                    className="text-[var(--cp-text)] underline decoration-[var(--cp-border-strong)] underline-offset-4 transition hover:text-[var(--cp-accent)]"
+                    className="shrink-0 underline underline-offset-2 transition hover:text-[#7657d9]"
                   >
                     Change
                   </button>
@@ -535,6 +462,14 @@ export default function LoginPage() {
               </div>
             </div>
           </section>
+
+          {/* Small product label kept outside the monitor, but not used as a separate login card. */}
+          <div className="absolute left-[8.2%] top-[6.2%] z-10 inline-flex items-center gap-2">
+            <BrandMark className="h-[clamp(21px,3vw,40px)] w-[clamp(25px,4vw,44px)]" />
+            <span className="text-[clamp(10px,1.35vw,18px)] font-semibold tracking-[-0.02em] text-[#292722]">
+              ControlPlane
+            </span>
+          </div>
         </div>
       </div>
 
@@ -552,27 +487,16 @@ export default function LoginPage() {
   );
 }
 
-function BrandMark({
-  compact = false,
-  className = '',
-}: {
-  compact?: boolean;
-  className?: string;
-}) {
+function BrandMark({ className = '' }: { className?: string }) {
   return (
     <span
       aria-hidden="true"
       className={[
-        'flex items-center justify-center rounded-[10px] border border-[var(--cp-border)] bg-[var(--cp-surface-raised)] text-[var(--cp-accent)]',
-        compact ? 'h-9 w-9' : 'h-11 w-11',
+        'flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#d7ecdd] bg-white text-[#4c9a6a]',
         className,
       ].join(' ')}
     >
-      <svg
-        viewBox="0 0 32 32"
-        className={compact ? 'h-5 w-5' : 'h-6 w-6'}
-        fill="none"
-      >
+      <svg viewBox="0 0 32 32" className="h-5 w-5" fill="none">
         <path
           d="M16 4.5L19.2 12.8L27.5 16L19.2 19.2L16 27.5L12.8 19.2L4.5 16L12.8 12.8L16 4.5Z"
           stroke="currentColor"
@@ -604,16 +528,16 @@ function JurisdictionModal({
   onConfirm: (profile: JurisdictionProfile) => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[#292722]/50 px-4 py-6 backdrop-blur-sm">
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="jurisdiction-title"
         aria-describedby="jurisdiction-description"
-        className="w-full max-w-[420px] rounded-[18px] border border-[var(--cp-border)] bg-[var(--cp-surface)] p-5 text-[var(--cp-text)] shadow-[0_30px_100px_rgba(0,0,0,0.48)]"
+        className="w-full max-w-[420px] rounded-[18px] border border-[#e5e3de] bg-white p-5 text-[#292722] shadow-[0_30px_80px_rgba(41,39,34,0.18)]"
       >
         <div className="flex items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] border border-[var(--cp-border)] bg-[var(--cp-surface-raised)] text-[var(--cp-accent)]">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] border border-[#e5e3de] bg-[#faf9f7] text-[#7657d9]">
             <Globe2 size={18} strokeWidth={1.8} aria-hidden />
           </span>
 
@@ -624,7 +548,7 @@ function JurisdictionModal({
 
             <p
               id="jurisdiction-description"
-              className="mt-1 text-sm leading-6 text-[var(--cp-text-muted)]"
+              className="mt-1 text-sm leading-6 text-[#89857e]"
             >
               Choose the policy profile used for this demo session.
             </p>
@@ -633,8 +557,8 @@ function JurisdictionModal({
 
         {!showManual ? (
           <>
-            <div className="mt-5 rounded-[13px] border border-[var(--cp-border)] bg-[var(--cp-surface-raised)] p-4">
-              <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--cp-text-muted)]">
+            <div className="mt-5 rounded-[13px] border border-[#e5e3de] bg-[#faf9f7] p-4">
+              <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-[#9c9890]">
                 Region detected
               </p>
 
@@ -642,7 +566,7 @@ function JurisdictionModal({
                 {DETECTED_JURISDICTION.label} · {DETECTED_JURISDICTION.code}
               </p>
 
-              <p className="mt-1 text-xs leading-5 text-[var(--cp-text-muted)]">
+              <p className="mt-1 text-xs leading-5 text-[#9c9890]">
                 {DETECTED_JURISDICTION.description}
               </p>
             </div>
@@ -652,7 +576,7 @@ function JurisdictionModal({
                 type="button"
                 autoFocus
                 onClick={() => onConfirm(DETECTED_JURISDICTION)}
-                className="h-11 rounded-[12px] bg-[var(--cp-accent)] px-4 text-sm font-medium text-[#0d0b12] transition hover:brightness-105"
+                className="h-11 rounded-[12px] bg-[#8768dc] px-4 text-sm font-medium text-white transition hover:bg-[#7959ce]"
               >
                 Confirm India
               </button>
@@ -660,7 +584,7 @@ function JurisdictionModal({
               <button
                 type="button"
                 onClick={onShowManual}
-                className="h-11 rounded-[12px] border border-[var(--cp-border)] px-4 text-sm font-medium transition hover:border-[var(--cp-border-strong)] hover:bg-white/[0.025]"
+                className="h-11 rounded-[12px] border border-[#e5e3de] px-4 text-sm font-medium text-[#3d3b36] transition hover:border-[#d7d4ce] hover:bg-[#faf9f7]"
               >
                 Set manually
               </button>
@@ -682,15 +606,15 @@ function JurisdictionModal({
                     className={[
                       'w-full rounded-[12px] border px-3.5 py-3 text-left transition',
                       selected
-                        ? 'border-[var(--cp-accent)] bg-[var(--cp-accent-soft)]'
-                        : 'border-[var(--cp-border)] bg-[var(--cp-surface-raised)] hover:border-[var(--cp-border-strong)]',
+                        ? 'border-[#8768dc] bg-[#f3f0ff]'
+                        : 'border-[#e5e3de] bg-[#faf9f7] hover:border-[#d7d4ce]',
                     ].join(' ')}
                   >
-                    <span className="block text-sm font-medium">
+                    <span className="block text-sm font-medium text-[#3d3b36]">
                       {profile.label}
                     </span>
 
-                    <span className="mt-0.5 block text-xs text-[var(--cp-text-muted)]">
+                    <span className="mt-0.5 block text-xs text-[#9c9890]">
                       {profile.code} · {profile.description}
                     </span>
                   </button>
@@ -698,7 +622,7 @@ function JurisdictionModal({
               })}
             </div>
 
-            <p className="mt-3 text-[11px] leading-5 text-[var(--cp-text-muted)]">
+            <p className="mt-3 text-[11px] leading-5 text-[#9c9890]">
               Demo policy profiles are illustrative and not legal advice.
             </p>
 
@@ -706,7 +630,7 @@ function JurisdictionModal({
               <button
                 type="button"
                 onClick={() => onConfirm(selectedManualJurisdiction)}
-                className="h-11 rounded-[12px] bg-[var(--cp-accent)] px-4 text-sm font-medium text-[#0d0b12] transition hover:brightness-105"
+                className="h-11 rounded-[12px] bg-[#8768dc] px-4 text-sm font-medium text-white transition hover:bg-[#7959ce]"
               >
                 Use {selectedManualJurisdiction.label}
               </button>
@@ -714,7 +638,7 @@ function JurisdictionModal({
               <button
                 type="button"
                 onClick={onBackToDetected}
-                className="h-11 rounded-[12px] border border-[var(--cp-border)] px-4 text-sm font-medium transition hover:border-[var(--cp-border-strong)] hover:bg-white/[0.025]"
+                className="h-11 rounded-[12px] border border-[#e5e3de] px-4 text-sm font-medium text-[#3d3b36] transition hover:border-[#d7d4ce] hover:bg-[#faf9f7]"
               >
                 Back
               </button>
