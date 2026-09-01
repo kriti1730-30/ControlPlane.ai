@@ -58,10 +58,6 @@ function clearSession(): void {
   }
 }
 
-const OTHER_WORKSPACE: Record<SessionRole, { to: string; label: string }> = {
-  employee: { to: '/customer-operations', label: 'Customer Operations' },
-  support_operator: { to: '/employee', label: 'Employee AI' },
-};
 
 type NavItem = {
   to: string;
