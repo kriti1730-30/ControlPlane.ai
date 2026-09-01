@@ -5,7 +5,6 @@ import {
   BriefcaseBusiness,
   Globe2,
   Headphones,
-  ShieldCheck,
 } from 'lucide-react';
 
 const JURISDICTION_STORAGE_KEY = 'controlplane_jurisdiction';
