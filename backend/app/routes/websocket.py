@@ -9,9 +9,8 @@ router = APIRouter()
 async def run_socket(websocket: WebSocket, run_id: str) -> None:
     await websocket.accept()
 
-    # replay path — covers both "connected after the run already started"
-    # and "reconnected after a drop," using the exact same events a fresh
-    # connection gets
+    # replay first — covers both "connected after the run already started"
+    # and "reconnected after a drop"
     for event in bus.get_history(run_id):
         await websocket.send_json(event.model_dump())
 

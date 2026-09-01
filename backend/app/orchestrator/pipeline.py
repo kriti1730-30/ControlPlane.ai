@@ -1,170 +1,233 @@
 """
-Three real detection paths, chosen by actual regex/keyword logic against the
-task text - not hardcoded to a scenario name. These three paths were chosen
-to match the three patterns already validated in the frontend's own seeded
-HISTORY constant (confidential-data fix, production-action ask, unverified-
-source block), so a live run looks and reads consistently with the history
-a reviewer opens right after.
+The real, corrected pipeline. Fixes applied from review:
+  - run_id generated ONCE here, threaded through every event and the store
+    (never re-derived from an event's own id)
+  - runs as a background task, streaming events via the event bus as each
+    stage completes — POST /v1/runs returns run_id immediately
+  - the model call is a single structured_call producing {answer,
+    proposed_actions} together, so Stage 5's impact gate has real data
+  - PII redaction actually replaces the context text used downstream
+  - an unsupported-claim finding actually triggers regeneration, and the
+    regenerated text actually replaces envelope.draft_output
+  - the frontend's model selector actually selects the provider/model,
+    via resolve_model()
+  - actor_type distinguishes Employee runs from Customer Operations cases —
+    same pipeline, same checks, just a tag and a couple of display fields
 """
 
 import asyncio
-import re
-import time
-from typing import Literal
+import uuid
+from typing import Any, Literal, Optional
 
-from app.contracts import ControlEvent
-from app.db.memory_store import store
+from app.checks import stage1_identity, stage2_risk, stage3_retrieval, stage4_assembly, \
+    stage5_agentic, stage6_output, stage7_learning
+from app.checks.bias_sentinel import sentinel_log
+from app.contracts import CheckResult, ControlEvent, Envelope, to_control_event
+from app.db.sql_store import store
 from app.event_bus import bus
+from app.llm.client import LLMUnavailable, resolve_check_model, resolve_check_provider, resolve_model, structured_call
 
-STEP_DELAY = 0.8
+GENERATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "answer": {"type": "string"},
+        "proposed_actions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "tool": {"type": "string", "enum": [
+                        "none", "issue_refund", "update_address", "delete_file", "deploy_production"]},
+                    "amount": {"type": "number"},
+                    "target": {"type": "string"},
+                },
+                "required": ["tool"],
+            },
+        },
+    },
+    "required": ["answer", "proposed_actions"],
+}
 
-CONFIDENTIAL_KEYWORDS = ["confidential", "acquisition", "customer data", "retention"]
-PRODUCTION_KEYWORDS = ["restart", "deploy", "production", "payment-service", "delete"]
-EXTERNAL_KEYWORDS = ["competitor", "external", "public pricing", "compare"]
+GENERATION_SYSTEM_PROMPT = (
+    "You are an enterprise assistant. Answer the task using only the provided context if relevant. "
+    "If completing this task genuinely requires taking a real action (issuing a refund, changing an "
+    "address, deleting a file, deploying to production), list it in proposed_actions with the tool "
+    "name and relevant parameters (amount for refunds, target for addresses/files/deployments). "
+    "If no action is needed, return an empty proposed_actions list."
+)
 
-EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
-PHONE_RE = re.compile(r"\b\d{3}-\d{4}\b")
+MOCK_DOCUMENTS: dict[str, dict[str, Any]] = {
+    "acquisition targets": {
+        "source": "Q3_acquisition_targets.pdf", "source_governance": "governed",
+        "text": "Target: Meridian Labs. Contact: jane.doe@meridian.com, phone 555-0142. "
+                "Estimated valuation $40M.",
+    },
+    "confidential": {
+        "source": "Q3_acquisition_targets.pdf", "source_governance": "governed",
+        "text": "Target: Meridian Labs. Contact: jane.doe@meridian.com, phone 555-0142. "
+                "Estimated valuation $40M.",
+    },
+    "order": {
+        "source": "order_db", "source_governance": "governed",
+        "text": "Order #1842, status: delivered 2 days ago.",
+    },
+    "refund": {
+        "source": "order_db", "source_governance": "governed",
+        "text": "Order #8842, customer B, value 42000, status: in transit.",
+    },
+}
 
-Scenario = Literal["confidential", "production", "external", "clean"]
 
-
-def classify(task: str) -> Scenario:
+def _retrieve(task: str) -> list[dict[str, Any]]:
     lowered = task.lower()
-    if any(k in lowered for k in CONFIDENTIAL_KEYWORDS):
-        return "confidential"
-    if any(k in lowered for k in PRODUCTION_KEYWORDS):
-        return "production"
-    if any(k in lowered for k in EXTERNAL_KEYWORDS):
-        return "external"
-    return "clean"
+    return [doc for key, doc in MOCK_DOCUMENTS.items() if key in lowered]
 
 
-def _eid(run_id: str, n: int) -> str:
-    return f"{run_id}-{n}"
-
-
-async def _emit(run_id: str, counter: list[int], **fields) -> ControlEvent:
-    counter[0] += 1
-    event = ControlEvent(id=_eid(run_id, counter[0]), **fields)
-    await bus.publish(run_id, event)
-    await asyncio.sleep(STEP_DELAY)
+async def _emit(run_id: str, result: CheckResult) -> ControlEvent:
+    event = to_control_event(result, event_id=f"{run_id}-{uuid.uuid4().hex[:6]}")
+    await bus.publish(run_id, event, check_id=result.check_id)
+    sentinel_log.record(result.check_id, result.action)
     return event
 
 
-async def run_pipeline(run_id: str, task: str) -> None:
+async def _await_human(run_id: str, timeout: float = 180.0) -> str:
+    elapsed, interval = 0.0, 0.5
+    while elapsed < timeout:
+        record = store.get(run_id)
+        if record and record.state == "running":  # resolved by routes/runs.py's /intervene handler
+            return record.pending_intervention_decision  # type: ignore[attr-defined]
+        await asyncio.sleep(interval)
+        elapsed += interval
+    return "deny"  # fail-safe: unresolved escalation times out to deny, never to allow
+
+
+async def run_pipeline(
+    run_id: str,
+    actor_type: Literal["employee", "customer_support"],
+    task: str,
+    model_label: str,
+    mode_hint: Optional[str] = None,
+) -> None:
+    """The background task. Publishes events as it goes; the caller has
+    already returned run_id to the client before this even starts."""
     record = store.get(run_id)
-    n = [0]
-    scenario = classify(task)
+    provider, model = resolve_model(model_label)
+    check_provider = resolve_check_provider()
+    check_model = resolve_check_model(check_provider) if check_provider else None
+    # may differ from the generation provider —
+                                                # checks use whatever key IS configured, even if
+                                                # the user picked a model for generation we can't reach
+    envelope = Envelope(run_id=run_id, task=task, model_label=model_label)
 
-    # Stage 1 — Identity, Platform & Jurisdiction
-    await _emit(run_id, n, stage=1, status="passed", decision="ALLOW",
-                title="Identity verified",
-                description="Employee identity, tenant and jurisdiction context verified.",
-                metric="tenant match · 1.00")
+    async def emit_and_check_block(result: CheckResult) -> bool:
+        await _emit(run_id, result)
+        if result.action == "block":
+            await store.update_state(run_id, state="blocked", final_output=f"Blocked: {result.description}")
+            return True
+        return False
 
-    # Stage 2 — Risk Profiling & Plan/Build Routing
-    impact = "HIGH" if scenario in ("production", "confidential") else \
-             "LOW" if scenario == "clean" else "MEDIUM"
-    await _emit(run_id, n, stage=2, status="passed", decision="ALLOW",
-                title="Risk profile created",
-                description="The request has been classified before deeper execution begins.",
-                metric=f"impact · {impact}")
+    async def emit_and_check_escalate(result: CheckResult) -> Optional[str]:
+        """Returns the human decision if escalated, or None if not escalated."""
+        event = await _emit(run_id, result)
+        if result.action != "escalate":
+            return None
+        await store.update_state(run_id, state="waiting")
+        record.pending_intervention = event
+        decision = await _await_human(run_id)
+        await store.update_state(run_id, state="running")
+        return decision
 
-    # Stage 3 — Retrieval / Tool Gate
-    await _emit(run_id, n, stage=3, status="running",
-                title="Enterprise sources retrieved",
-                description="Authorized enterprise sources are being checked for provenance.",
-                metric="3 sources")
-
-    if scenario == "external":
-        await _emit(run_id, n, stage=3, status="blocked", decision="BLOCK",
-                     title="Source blocked",
-                     description="ControlPlane prevented unverified content from entering the workflow.",
-                     metric="trust · LOW", action="Run terminated")
-        record.state = "blocked"
-        return  # run ends here — matches the frontend's own "external" seed exactly
-
-    if scenario == "confidential":
-        # a real regex check against the (simulated) retrieved context —
-        # not a scripted "always fires" branch
-        sample_context = "Contact: jane.doe@meridian.com, phone 555-0142"
-        spans = EMAIL_RE.findall(sample_context) + PHONE_RE.findall(sample_context)
-        await _emit(run_id, n, stage=3, status="fixed", decision="FIX",
-                     title="Sensitive fields detected",
-                     description="Unnecessary employee-level information was found in the retrieved context.",
-                     metric=f"{len(spans)} fields removed", action="Sanitized context rebuilt")
-    else:
-        await _emit(run_id, n, stage=3, status="passed", decision="ALLOW",
-                     title="Sources verified",
-                     description="All retrieved sources passed provenance and access checks.",
-                     metric="3 / 3 sources")
-
-    # Stage 4 — Pre-LLM Assembly Gate
-    await _emit(run_id, n, stage=4, status="passed", decision="ALLOW",
-                title="Context assembled",
-                description="Sanitized evidence was compressed and prepared for model execution.",
-                metric="5,260 tokens")
-
-    # Stage 5 — Agentic Execution & Controls
-    if scenario == "production":
-        await _emit(run_id, n, stage=5, status="passed",
-                     title="Agent inspected deployment logs",
-                     description="The agent identified a configuration-related failure.",
-                     metric="step · 5")
-        intervention = await _emit(run_id, n, stage=5, status="ask", decision="ASK",
-                     title="Production restart proposed",
-                     description="Agent proposed a production restart.",
-                     metric="impact · HIGH", action="Execution paused")
-        record.pending_intervention = intervention
-        record.state = "waiting"
-        return  # pipeline pauses here — resumed by /intervene, see resume_after_intervention below
-
-    await _emit(run_id, n, stage=5, status="passed",
-                title="Agentic analysis completed",
-                description="The agent compared the relevant data and generated candidate findings.",
-                metric="7 agent steps")
-
-    await _finish_stage6_and_7(run_id, n, record, scenario)
-
-
-async def _finish_stage6_and_7(run_id: str, n: list[int], record, scenario: Scenario) -> None:
-    # Stage 6 — Output Verification
-    if scenario == "confidential":
-        await _emit(run_id, n, stage=6, status="fixed", decision="FIX",
-                     title="Unsupported claim repaired",
-                     description="One generated statement was stronger than the available evidence justified.",
-                     metric="support · 0.46", action="Claim regenerated")
-
-    await _emit(run_id, n, stage=6, status="passed", decision="ALLOW",
-                title="Final response verified",
-                description="Final claims, sensitive content handling and policy constraints passed.",
-                metric="support · 0.93")
-
-    # Stage 7 — Continuous Learning & Calibration (post-hoc — never blocks the user)
-    await _emit(run_id, n, stage=7, status="passed",
-                title="Outcome recorded",
-                description="Run outcome and interventions were recorded for future calibration.",
-                metric="recorded")
-
-    record.state = "completed"
-
-
-async def resume_after_intervention(run_id: str, decision: Literal["approve", "deny"]) -> None:
-    record = store.get(run_id)
-    n_start = len(bus.get_history(run_id))
-    n = [n_start]
-
-    if decision == "deny":
-        await _emit(run_id, n, stage=5, status="blocked", decision="BLOCK",
-                     title="Human decision: blocked",
-                     description="The proposed action was stopped before it could execute.",
-                     action="Workflow terminated")
-        record.state = "blocked"
+    # --- Stage 1 ---
+    if await emit_and_check_block(stage1_identity.tenant_identity(envelope)):
+        return
+    if await emit_and_check_block(stage1_identity.platform_and_jurisdiction(envelope)):
+        return
+    if await emit_and_check_block(await stage1_identity.injection_scan(envelope, check_provider)):
         return
 
-    await _emit(run_id, n, stage=5, status="passed", decision="ALLOW",
-                title="Human approval recorded",
-                description="Employee approved continuation and ControlPlane resumed the workflow.",
-                action="Workflow resumed")
+    # --- Stage 2 ---
+    risk_result, envelope.risk = await stage2_risk.risk_profile(envelope, check_provider)
+    if mode_hint:
+        envelope.risk.mode = mode_hint
+    if await emit_and_check_block(risk_result):
+        return
 
-    await _finish_stage6_and_7(run_id, n, record, scenario="production")
+    # --- Stage 3 ---
+    envelope.retrieved_context = _retrieve(task)
+    if await emit_and_check_block(stage3_retrieval.acl_check(envelope)):
+        return
+    pii_result, redacted_context = await stage3_retrieval.pii_scan_context(envelope, check_provider)
+    envelope.retrieved_context = redacted_context  # THE actual fix — downstream uses redacted text
+    if await emit_and_check_block(pii_result):
+        return
+
+    # --- Stage 4 ---
+    if await emit_and_check_block(stage4_assembly.extraction_attempt_check(envelope)):
+        return
+    await _emit(run_id, stage4_assembly.temporal_check(envelope))
+    await _emit(run_id, stage4_assembly.context_assembly(envelope))
+
+    if envelope.risk.mode == "plan":
+        await store.update_state(run_id, state="completed",
+                                  final_output="Plan acknowledged — no action taken yet. Awaiting build approval.")
+        await _emit(run_id, stage7_learning.record_outcome(envelope))
+        return
+
+    # --- The real model call: one structured call produces answer + actions together ---
+    context_text = "\n".join(c["text"] for c in envelope.retrieved_context)
+    try:
+        gen = await structured_call(
+            system_prompt=f"{GENERATION_SYSTEM_PROMPT}\n\nCONTEXT:\n{context_text}",
+            user_prompt=task, json_schema=GENERATION_SCHEMA, provider=provider, model=model,
+        )
+        envelope.draft_output = gen["answer"]
+        envelope.proposed_actions = [a for a in gen["proposed_actions"] if a.get("tool") != "none"]
+    except LLMUnavailable:
+        envelope.draft_output = (
+            f"[No live '{provider}' key configured] Acknowledged: {task}"
+        )
+        envelope.proposed_actions = []
+
+    # --- Stage 5 ---
+    entailment_result = await stage5_agentic.entailment_gate(envelope, check_provider)
+    flagged = entailment_result.action != "allow"
+    await _emit(run_id, entailment_result)
+
+    if flagged:
+        regenerated = await stage5_agentic.regenerate_grounded(envelope, provider, model)
+        if regenerated:
+            envelope.draft_output = regenerated  # THE actual fix — really replaces the draft
+        consistency_result = await stage5_agentic.self_consistency(envelope, check_provider, check_model)
+        consistency_decision = await emit_and_check_escalate(consistency_result)
+        if consistency_decision == "deny":
+            await store.update_state(run_id, state="blocked", final_output="Denied after low-consistency review.")
+            return
+        if consistency_result.action == "block":
+            await store.update_state(run_id, state="blocked", final_output=f"Blocked: {consistency_result.description}")
+            return
+
+    impact_result = stage5_agentic.impact_reversibility_gate(envelope)
+    decision = await emit_and_check_escalate(impact_result)
+    if decision == "deny":
+        await store.update_state(run_id, state="blocked", final_output="Action denied by reviewer.")
+        return
+
+    # --- Stage 6 ---
+    if await emit_and_check_block(await stage6_output.toxicity_check(envelope.draft_output, check_provider)):
+        return
+    if await emit_and_check_block(await stage6_output.pii_scan_output(envelope.draft_output)):
+        return
+    cf_result = await stage6_output.counterfactual_fairness(envelope.draft_output, envelope, check_provider)
+    if cf_result:
+        await _emit(run_id, cf_result)
+
+    # --- Stage 7 (post-hoc, never blocks) ---
+    await _emit(run_id, stage7_learning.record_outcome(envelope))
+
+    await store.update_state(run_id, state="completed", final_output=envelope.draft_output)
+
+
+async def resolve_intervention(run_id: str, decision: Literal["approve", "deny"]) -> None:
+    record = store.get(run_id)
+    record.pending_intervention_decision = decision  # type: ignore[attr-defined]
+    await store.update_state(run_id, state="running")  # signals _await_human's poll loop
