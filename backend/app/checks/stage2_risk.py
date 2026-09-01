@@ -14,28 +14,32 @@ RISK_SCHEMA = {
     "type": "object",
     "properties": {
         "impact_tier": {"type": "string", "enum": ["low", "medium", "high"]},
-        "mode": {"type": "string", "enum": ["plan", "build"]},
         "sensitivity": {"type": "string", "enum": ["standard", "high"]},
         "reasons": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["impact_tier", "mode", "sensitivity", "reasons"],
+    "required": ["impact_tier", "sensitivity", "reasons"],
 }
 
 
 async def risk_profile(envelope: Envelope, provider: Optional[str]) -> tuple[CheckResult, RiskTags]:
+    # Fix: `mode` (plan/build) used to be an LLM output here, which meant
+    # the model's own risk judgment could silently decide "plan" for an
+    # ordinary question — and the pipeline then skipped calling the model
+    # at all. mode is now purely an external execution policy (set by the
+    # caller via mode_hint, defaulting to "build") — never something Stage 2
+    # infers. This function only ever assesses RISK, never execution mode.
     if provider:
         try:
             result = await structured_call(
                 system_prompt=(
                     "Classify the business risk of this AI task request. impact_tier reflects "
-                    "how much damage a wrong or hijacked action could cause. mode is 'plan' if "
-                    "this is exploratory/no side effects yet, 'build' if it will take real actions. "
+                    "how much damage a wrong or hijacked action could cause. "
                     "sensitivity is 'high' if it touches confidential, financial, or regulated data."
                 ),
                 user_prompt=envelope.task, json_schema=RISK_SCHEMA, provider=provider,
             )
             tags = RiskTags(
-                impact_tier=result["impact_tier"], mode=result["mode"],
+                impact_tier=result["impact_tier"], mode="build",
                 sensitivity=result["sensitivity"], reasons=result["reasons"],
                 score={"low": 10, "medium": 40, "high": 70}[result["impact_tier"]],
             )
