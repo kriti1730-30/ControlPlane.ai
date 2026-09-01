@@ -28,6 +28,7 @@ import {
   getRunEvents,
   intervene,
 } from './employeeApi';
+import type { RunRecord } from './employeeApi';
 
 
 
@@ -322,6 +323,43 @@ const TASKS = [
   },
 ] as const;
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * The backend fix closes the actual race (final_output is now persisted
+ * before the Stage 7 event fires), but this retry is worth keeping as
+ * genuine defense in depth — a slow disk write or a future change
+ * shouldn't be able to reintroduce this bug silently.
+ */
+async function fetchCompletedRunWithRetry(
+  runId: string,
+  maxAttempts = 4,
+  delayMs = 400,
+): Promise<RunRecord | null> {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const run = await getRun(runId);
+
+    const isTerminal = run.state === 'completed' || run.state === 'blocked';
+    const hasOutput =
+      typeof run.final_output === 'string' && run.final_output.trim().length > 0;
+
+    if (run.state === 'blocked' || (run.state === 'completed' && hasOutput)) {
+      return run;
+    }
+
+    if (isTerminal && attempt === maxAttempts - 1) {
+      // Terminal but genuinely empty (not a timing issue) — return it as-is
+      // rather than retrying forever for output that will never arrive.
+      return run;
+    }
+
+    await delay(delayMs);
+  }
+  return null;
+}
+
 const MODELS = ['Claude', 'GPT', 'Gemini'];
 
 
@@ -379,7 +417,8 @@ export default function EmployeeWorkspace() {
   socketRef.current?.close();
   socketRef.current = null;
 
-  setMessages([
+  setMessages((current) => [
+    ...current,
     {
       id: `local-${Date.now()}-user`,
       role: 'user',
@@ -429,8 +468,15 @@ export default function EmployeeWorkspace() {
         addEvent(event);
 
         if (event.stage === 7 && event.status === 'passed') {
-          void getRun(created.run_id)
+          void fetchCompletedRunWithRetry(created.run_id)
             .then((run) => {
+              if (!run) {
+                console.error(
+                  'Run reached Stage 7 but never reported a final result.',
+                );
+                return;
+              }
+
               if (run.state === 'blocked') {
                 setRunState('blocked');
                 return;

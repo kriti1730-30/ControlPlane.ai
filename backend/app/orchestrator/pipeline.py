@@ -176,7 +176,6 @@ async def _run_pipeline_inner(
         envelope.risk.mode = mode_hint
     if await emit_and_check_block(risk_result):
         return
-
     # --- Stage 3 ---
     envelope.retrieved_context = _retrieve(task)
     if await emit_and_check_block(stage3_retrieval.acl_check(envelope)):
@@ -192,13 +191,11 @@ async def _run_pipeline_inner(
     await _emit(run_id, stage4_assembly.temporal_check(envelope))
     await _emit(run_id, stage4_assembly.context_assembly(envelope))
 
-    if envelope.risk.mode == "plan":
-        await store.update_state(run_id, state="completed",
-                                  final_output="Plan acknowledged — no action taken yet. Awaiting build approval.")
-        await _emit(run_id, stage7_learning.record_outcome(envelope))
-        return
-
-    # --- The real model call: one structured call produces answer + actions together ---
+    # --- The real model call: BOTH plan and build modes call the model.
+    # `mode` no longer decides whether generation happens — it only decides,
+    # after generation, whether any proposed_actions are allowed to survive
+    # into Stage 5's impact gate. A "plan" request still gets a real,
+    # LLM-generated plan back; it just can never trigger a real action.
     context_text = "\n".join(c["text"] for c in envelope.retrieved_context)
     try:
         gen = await structured_call(
@@ -206,7 +203,10 @@ async def _run_pipeline_inner(
             user_prompt=task, json_schema=GENERATION_SCHEMA, provider=provider, model=model,
         )
         envelope.draft_output = gen["answer"]
-        envelope.proposed_actions = [a for a in gen["proposed_actions"] if a.get("tool") != "none"]
+        if envelope.risk.mode == "plan":
+            envelope.proposed_actions = []  # plan mode: never let a proposed action through
+        else:
+            envelope.proposed_actions = [a for a in gen["proposed_actions"] if a.get("tool") != "none"]
     except LLMUnavailable:
         envelope.draft_output = (
             f"[No live '{provider}' key configured] Acknowledged: {task}"
