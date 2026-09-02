@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 *.log
 *.db
+# SQLite runtime files
+backend/*.db-journal
+backend/*.db-wal
+backend/*.db-shm
