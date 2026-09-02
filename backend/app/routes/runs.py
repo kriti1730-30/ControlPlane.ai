@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.db.sql_store import store
+from app.db import database
 from app.event_bus import bus
 from app.orchestrator.pipeline import run_pipeline, resolve_intervention
 from app.checks.bias_sentinel import sentinel_log
@@ -27,6 +28,7 @@ class RunRequest(BaseModel):
     message: str
     model: str = "gemini"  # default to the provider we have a live key for, if any
     mode: Optional[Literal["plan", "build"]] = None
+    workflow: Optional[str] = None  # e.g. "production_change" — see orchestrator/pipeline.py
 
 
 class RunCreatedResponse(BaseModel):
@@ -43,8 +45,29 @@ async def create_run(payload: RunRequest) -> RunCreatedResponse:
     watch the pipeline execute — this call does NOT wait for it to finish."""
     run_id = f"CP-{uuid.uuid4().hex[:5]}"
     await store.create(run_id, actor_type="employee", task=payload.message, model_label=payload.model)
-    _spawn(run_pipeline(run_id, "employee", payload.message, payload.model, mode_hint=payload.mode))
+    _spawn(run_pipeline(run_id, "employee", payload.message, payload.model,
+                         mode_hint=payload.mode, workflow=payload.workflow))
     return RunCreatedResponse(run_id=run_id)
+
+
+@router.get("/runs")
+async def list_runs(actor_type: str = "employee") -> list[dict]:
+    """Real, persisted history — reads directly from SQLite, not the
+    in-memory cache SQLStore uses for fast escalation polling. This is
+    what makes History survive a server restart instead of only showing
+    runs created since the process last booted."""
+    rows = await database.list_runs_by_actor(actor_type)
+    return [
+        {
+            "run_id": row["run_id"],
+            "task": row["task"],
+            "model_label": row["model_label"],
+            "state": row["state"],
+            "final_output": row["final_output"],
+            "created_at": row["created_at"],  # UTC ISO string — frontend converts to local display time
+        }
+        for row in rows
+    ]
 
 
 @router.get("/runs/{run_id}")

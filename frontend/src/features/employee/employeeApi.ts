@@ -13,6 +13,15 @@ export type RunRecord = {
   pending_intervention: ControlEvent | null;
 };
 
+export type RunSummary = {
+  run_id: string;
+  task: string;
+  model_label: string;
+  state: 'running' | 'waiting' | 'completed' | 'blocked';
+  final_output: string | null;
+  created_at: string; // UTC ISO string — convert to local time for display
+};
+
 async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const text = await response.text();
@@ -27,6 +36,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
 export async function createRun(
   message: string,
   model: string,
+  workflow?: string,
 ): Promise<CreateRunResponse> {
   const response = await fetch(`${API_BASE_URL}/v1/runs`, {
     method: 'POST',
@@ -36,6 +46,7 @@ export async function createRun(
     body: JSON.stringify({
       message,
       model,
+      ...(workflow ? { workflow } : {}),
     }),
   });
 
@@ -48,6 +59,14 @@ export async function getRun(runId: string): Promise<RunRecord> {
   );
 
   return parseResponse<RunRecord>(response);
+}
+
+export async function listRuns(actorType: string = 'employee'): Promise<RunSummary[]> {
+  const response = await fetch(
+    `${API_BASE_URL}/v1/runs?actor_type=${encodeURIComponent(actorType)}`,
+  );
+
+  return parseResponse<RunSummary[]>(response);
 }
 
 export async function getRunEvents(
