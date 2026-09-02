@@ -9,11 +9,11 @@
 :root {
   color-scheme: dark;
 
-  --cp-bg: #0f0f12;
-  --cp-surface: #15151a;
-  --cp-surface-raised: #1d1c24;
-  --cp-border: #2a2933;
-  --cp-border-strong: #393747;
+  --cp-bg: #1c1c1e;
+  --cp-surface: #1c1c1e;
+  --cp-surface-raised: #232326;
+  --cp-border: #2f2f33;
+  --cp-border-strong: #3a3a3f;
   --cp-text: #f4f2f8;
   --cp-text-muted: #b8b4c7;
   --cp-accent: #a78bfa;

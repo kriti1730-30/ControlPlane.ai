@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
   BrainCircuit,
@@ -6,6 +6,7 @@ import {
   ClipboardList,
   History,
   LogOut,
+  Repeat,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -33,6 +34,19 @@ const COLLAPSED_WIDTH = 64;
 const MOBILE_WIDTH = 280;
 const SESSION_STORAGE_KEY = 'controlplane_session';
 
+// Glass theme — scoped to this file only, not the shared design tokens,
+// since the connected content area stays exactly as it is (white/light).
+const GLASS = {
+  background:
+    'linear-gradient(165deg, rgba(40,40,44,0.94) 0%, rgba(28,28,30,0.96) 50%, rgba(18,18,20,0.97) 100%)',
+  border: 'rgba(255,255,255,0.08)',
+  textPrimary: '#FFFFFF',
+  textSecondary: 'rgba(255,255,255,0.60)',
+  textMuted: 'rgba(255,255,255,0.38)',
+  hoverBg: 'rgba(255,255,255,0.08)',
+  iconBadgeBg: 'rgba(255,255,255,0.14)',
+} as const;
+
 type SessionRole = 'employee' | 'support_operator';
 
 function readSessionRole(): SessionRole | null {
@@ -58,6 +72,37 @@ function clearSession(): void {
   }
 }
 
+// Fix: "Switch to X" only ever navigated the route — it never touched the
+// stored session, so the sidebar (role-filtered nav + profile identity)
+// kept reflecting whichever role you originally logged in as, forever.
+// That's why the switch only ever worked in one direction and the sidebar
+// never matched the page you'd actually navigated to. This updates the
+// session's role/workspace at the moment of the click, before navigation
+// completes, so the next render picks up the correct, current role.
+function switchSessionRole(newRole: SessionRole): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const stored = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    const existing = stored ? JSON.parse(stored) : {};
+    window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+      ...existing,
+      role: newRole,
+      workspace: WORKSPACE_ROUTE_FOR_ROLE[newRole],
+    }));
+  } catch {
+    // best-effort — worst case the switch link's target is stale next time
+  }
+}
+
+const OTHER_WORKSPACE: Record<SessionRole, { to: string; label: string }> = {
+  employee: { to: '/customer-operations', label: 'Customer Operations' },
+  support_operator: { to: '/employee', label: 'Employee AI' },
+};
+
+const WORKSPACE_ROUTE_FOR_ROLE: Record<SessionRole, string> = {
+  employee: '/employee',
+  support_operator: '/customer-operations',
+};
 
 type NavItem = {
   to: string;
@@ -120,6 +165,12 @@ const WORKFLOW_ITEMS: NavItem[] = [
 export default function Sidebar() {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
+  // Subscribing to location explicitly guarantees Sidebar itself re-renders
+  // on every navigation (not just deeper children like NavRow that already
+  // subscribe) — that's what makes sessionRole actually re-read from
+  // localStorage right after a workspace switch, instead of only updating
+  // deeper in the tree while this component's own role/filtering goes stale.
+  useLocation();
   const sessionRole = readSessionRole();
 
   // Fix: both workspaces are real, finished features here, not a role-
@@ -128,7 +179,13 @@ export default function Sidebar() {
   // the page but not the stored role, so the nav kept showing only the
   // original one). Always show both; sessionRole is still used for the
   // profile row's own identity label further down.
-  const workspaceItems = ALL_WORKSPACE_ITEMS;
+  // Restored: each credential should only show its own workspace by
+  // default — showing both regardless of login defeats the point of having
+  // separate Employee / Support Operator accounts. Reaching the other one
+  // is still possible via the profile menu's "Switch to..." link below.
+  const workspaceItems = sessionRole
+    ? ALL_WORKSPACE_ITEMS.filter((item) => item.forRole === sessionRole)
+    : ALL_WORKSPACE_ITEMS;
 
   const {
     collapsed,
@@ -152,9 +209,12 @@ export default function Sidebar() {
     flexShrink: 0,
     paddingLeft: SPACE[6],
     paddingRight: SPACE[6],
-    backgroundColor: COLORS.surfaceMuted,
+    background: GLASS.background,
+    backdropFilter: 'blur(24px)',
+    WebkitBackdropFilter: 'blur(24px)',
+    borderRight: `1px solid ${GLASS.border}`,
     fontFamily: FONTS.sans,
-    color: COLORS.ink[700],
+    color: GLASS.textPrimary,
     display: 'flex',
     flexDirection: 'column',
     height: '100%',
@@ -341,8 +401,8 @@ function LogoRow({
                   width: 30,
                   height: 30,
                   borderRadius: RADIUS.md,
-                  backgroundColor: '#EEE9FF',
-                  color: '#7758D8',
+                  backgroundColor: GLASS.iconBadgeBg,
+                  color: GLASS.textPrimary,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -363,7 +423,7 @@ function LogoRow({
                     fontFamily: FONTS.sans,
                     fontSize: FONT_SIZE.md,
                     fontWeight: FONT_WEIGHT.medium,
-                    color: COLORS.ink[900],
+                    color: GLASS.textPrimary,
                     lineHeight: LINE_HEIGHT.normal,
                     whiteSpace: 'nowrap',
                   }}
@@ -378,7 +438,7 @@ function LogoRow({
                     fontFamily: FONTS.sans,
                     fontSize: FONT_SIZE.sm,
                     fontWeight: FONT_WEIGHT.regular,
-                    color: COLORS.ink[500],
+                    color: GLASS.textSecondary,
                     lineHeight: LINE_HEIGHT.normal,
                     whiteSpace: 'nowrap',
                   }}
@@ -447,11 +507,11 @@ function CollapseButton({
         minWidth: SPACE[18],
         borderRadius: RADIUS.pill,
         backgroundColor: hover
-          ? COLORS.cream[200]
+          ? GLASS.hoverBg
           : 'transparent',
         border: 'none',
         cursor: 'pointer',
-        color: COLORS.ink[900],
+        color: GLASS.textPrimary,
         transition: 'background-color 120ms',
         flexShrink: 0,
       }}
@@ -494,7 +554,7 @@ function NavGroup({
             fontSize: FONT_SIZE.md,
             fontWeight: FONT_WEIGHT.regular,
             lineHeight: LINE_HEIGHT.relaxed,
-            color: COLORS.ink[500],
+            color: GLASS.textMuted,
           }}
         >
           {label}
@@ -534,31 +594,43 @@ function NavRow({
   collapsed: boolean;
 }) {
   const [hover, setHover] = useState(false);
+  const location = useLocation();
 
-  const rowStyle = (isActive: boolean) =>
-    ({
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: collapsed
-        ? 'center'
-        : 'flex-start',
-      gap: SPACE[4],
-      height: SPACE[18],
-      paddingLeft: collapsed ? 0 : SPACE[6],
-      paddingRight: collapsed ? 0 : SPACE[6],
-      borderRadius: RADIUS.pill,
-      backgroundColor: isActive
-        ? COLORS.cream[300]
-        : hover
-          ? COLORS.cream[200]
-          : 'transparent',
-      color: isActive
-        ? COLORS.ink[900]
-        : COLORS.ink[600],
-      textDecoration: 'none',
-      transition:
-        'background-color 200ms, padding 200ms',
-    }) as const;
+  // Fix: NavLink's own isActive only compares pathname, never the query
+  // string — so every one of Research/Coding/Data Analysis/Production
+  // Change/History (all "/employee?...", differing only by query) matched
+  // as active simultaneously. Active state is computed manually here by
+  // comparing pathname AND search exactly, so only the one actually
+  // matching the current URL lights up.
+  const [toPath, toQuery = ''] = to.split('?');
+  const currentSearch = location.search.replace(/^\?/, '');
+  const isActive = location.pathname === toPath && currentSearch === toQuery;
+
+  // Fix (styling): every item — active or not — was rendering with the
+  // same rounded-pill background, so nothing visually distinguished the
+  // current section. Now: active = bright white text, no background at
+  // all; inactive = translucent white, no background; hover = a barely-
+  // there text-color shift only, never a box. (Colors inverted for the
+  // dark glass sidebar — active still means "solid/full-strength text",
+  // just white instead of black now that the background is dark.)
+  const rowStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: collapsed ? 'center' : 'flex-start',
+    gap: SPACE[4],
+    height: SPACE[18],
+    paddingLeft: collapsed ? 0 : SPACE[6],
+    paddingRight: collapsed ? 0 : SPACE[6],
+    backgroundColor: 'transparent',
+    color: isActive
+      ? GLASS.textPrimary
+      : hover
+        ? GLASS.textSecondary
+        : GLASS.textMuted,
+    fontWeight: isActive ? FONT_WEIGHT.medium : FONT_WEIGHT.regular,
+    textDecoration: 'none',
+    transition: 'color 150ms',
+  } as const;
 
   return (
     <NavLink
@@ -568,7 +640,7 @@ function NavRow({
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       className="focus-visible:outline-none focus-visible:ring-2"
-      style={({ isActive }) => rowStyle(isActive)}
+      style={rowStyle}
     >
       <span
         style={{
@@ -591,7 +663,7 @@ function NavRow({
               margin: 0,
               fontFamily: FONTS.sans,
               fontSize: FONT_SIZE.md,
-              fontWeight: FONT_WEIGHT.regular,
+              fontWeight: 'inherit',
               lineHeight: LINE_HEIGHT.relaxed,
               color: 'inherit',
               overflow: 'hidden',
@@ -610,7 +682,7 @@ function NavRow({
           strokeWidth={1.7}
           style={{
             flexShrink: 0,
-            color: COLORS.ink[400],
+            color: GLASS.textMuted,
           }}
           aria-hidden
         />
@@ -651,9 +723,9 @@ function SettingsRow({
         border: 'none',
         borderRadius: RADIUS.pill,
         backgroundColor: hover
-          ? COLORS.cream[200]
+          ? GLASS.hoverBg
           : 'transparent',
-        color: COLORS.ink[600],
+        color: GLASS.textSecondary,
         cursor: 'pointer',
         transition:
           'background-color 200ms, padding 200ms',
@@ -697,11 +769,13 @@ function ProfileRow({
       ? { initial: 'S', title: 'Support Operator', subtitle: 'Customer Operations' }
       : { initial: 'E', title: 'Employee', subtitle: 'Internal AI' };
 
+  const other = role ? OTHER_WORKSPACE[role] : null;
+
   return (
     <div
       style={{
         position: 'relative',
-        borderTop: `1px solid ${COLORS.border.DEFAULT}`,
+        borderTop: `1px solid ${GLASS.border}`,
         paddingTop: SPACE[4],
       }}
     >
@@ -723,6 +797,21 @@ function ProfileRow({
             zIndex: 60,
           }}
         >
+          {other && role && (
+            <NavLink
+              to={other.to}
+              onClick={() => {
+                switchSessionRole(role === 'employee' ? 'support_operator' : 'employee');
+                setOpen(false);
+              }}
+              role="menuitem"
+              style={{ ...menuItemStyle, textDecoration: 'none' }}
+            >
+              <Repeat size={14} strokeWidth={1.8} aria-hidden />
+              <span>Switch to {other.label}</span>
+            </NavLink>
+          )}
+
           <button
             type="button"
             role="menuitem"
@@ -760,72 +849,75 @@ function ProfileRow({
         style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: collapsed
-            ? 'center'
-            : 'flex-start',
-          gap: SPACE[4],
-          width: '100%',
+          justifyContent: collapsed ? 'center' : 'space-between',
+          gap: SPACE[3],
           border: 'none',
-          background: 'transparent',
-          padding: collapsed
-            ? 0
-            : `0 ${SPACE[6]}px`,
+          borderRadius: RADIUS.pill,
+          backgroundColor: '#FFFFFF',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
+          padding: collapsed ? 0 : `${SPACE[2]}px ${SPACE[3]}px`,
+          height: collapsed ? 40 : undefined,
+          width: collapsed ? 40 : '100%',
           cursor: 'pointer',
+          transition: 'transform 120ms',
         }}
       >
         <span
           style={{
             display: 'flex',
-            width: 32,
-            height: 32,
             alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: RADIUS.pill,
-            backgroundColor: COLORS.cream[300],
-            color: COLORS.ink[700],
-            fontSize: FONT_SIZE.sm,
-            fontWeight: FONT_WEIGHT.medium,
-            flexShrink: 0,
+            gap: SPACE[3],
+            minWidth: 0,
           }}
         >
-          {profile.initial}
-        </span>
-
-        {!collapsed && (
           <span
             style={{
-              minWidth: 0,
-              textAlign: 'left',
-              flex: 1,
+              display: 'flex',
+              width: 26,
+              height: 26,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: RADIUS.pill,
+              backgroundColor: '#1c1c1e',
+              color: '#FFFFFF',
+              fontSize: FONT_SIZE.sm,
+              fontWeight: FONT_WEIGHT.medium,
+              flexShrink: 0,
             }}
           >
+            {profile.initial}
+          </span>
+
+          {!collapsed && (
             <span
               style={{
-                display: 'block',
                 fontFamily: FONTS.sans,
                 fontSize: FONT_SIZE.sm,
                 fontWeight: FONT_WEIGHT.medium,
-                color: COLORS.ink[900],
+                color: '#1c1c1e',
                 lineHeight: LINE_HEIGHT.normal,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
               }}
             >
               {profile.title}
             </span>
+          )}
+        </span>
 
-            <span
-              style={{
-                display: 'block',
-                marginTop: 2,
-                fontFamily: FONTS.sans,
-                fontSize: FONT_SIZE.sm,
-                fontWeight: FONT_WEIGHT.regular,
-                color: COLORS.ink[500],
-                lineHeight: LINE_HEIGHT.normal,
-              }}
-            >
-              {profile.subtitle}
-            </span>
-          </span>
+        {!collapsed && (
+          <ChevronRight
+            size={14}
+            strokeWidth={2}
+            style={{
+              flexShrink: 0,
+              color: '#1c1c1e',
+              transform: open ? 'rotate(-90deg)' : 'rotate(90deg)',
+              transition: 'transform 150ms',
+            }}
+            aria-hidden
+          />
         )}
       </button>
     </div>

@@ -21,7 +21,6 @@ import PipelineTrace from './PipelineTrace';
 import type {
   ChatMessage,
   ControlEvent,
-  HistoricalRun,
 } from './types';
 import {
   connectRunSocket,
@@ -29,262 +28,12 @@ import {
   getRun,
   getRunEvents,
   intervene,
+  listRuns,
 } from './employeeApi';
-import type { RunRecord } from './employeeApi';
+import type { RunRecord, RunSummary } from './employeeApi';
 
 
 
-const HISTORY: HistoricalRun[] = [
-  {
-    id: 'CP-24081',
-    title: 'Q3 customer retention analysis',
-    preview:
-      'Analyze the Q3 retention dataset and identify the key drivers.',
-    model: 'Claude',
-    timestamp: 'Today · 4:12 PM',
-    messages: [
-      {
-        id: 'h1',
-        role: 'user',
-        content:
-          'Analyze the Q3 customer retention dataset and identify the key drivers.',
-      },
-      {
-        id: 'h2',
-        role: 'assistant',
-        content:
-          'I reviewed the authorized retention sources and identified the strongest drivers across the Q3 cohort. Two data-quality issues were corrected before producing the final analysis.',
-      },
-    ],
-    events: [
-      {
-        id: 'h-e1',
-        stage: 1,
-        title: 'Identity verified',
-        description:
-          'Employee identity, tenant and jurisdiction context verified.',
-        status: 'passed',
-        decision: 'ALLOW',
-        metric: 'tenant match · 1.00',
-      },
-      {
-        id: 'h-e2',
-        stage: 2,
-        title: 'Risk profile created',
-        description:
-          'Internal analytical task classified as moderate impact.',
-        status: 'passed',
-        decision: 'ALLOW',
-        metric: 'impact · MEDIUM',
-      },
-      {
-        id: 'h-e3',
-        stage: 3,
-        title: 'Enterprise sources retrieved',
-        description:
-          'Three authorized internal datasets were retrieved.',
-        status: 'passed',
-        decision: 'ALLOW',
-        metric: '3 / 3 sources',
-      },
-      {
-        id: 'h-e4',
-        stage: 3,
-        title: 'Sensitive fields removed',
-        description:
-          'Four unnecessary employee-level fields were removed before generation.',
-        status: 'fixed',
-        decision: 'FIX',
-        metric: '4 fields',
-        action: 'Sanitized context rebuilt',
-      },
-      {
-        id: 'h-e5',
-        stage: 4,
-        title: 'Context assembled',
-        description:
-          'Sanitized evidence was prepared for model execution.',
-        status: 'passed',
-        decision: 'ALLOW',
-        metric: '5,420 tokens',
-      },
-      {
-        id: 'h-e6',
-        stage: 5,
-        title: 'Agent analysis completed',
-        description:
-          'Retention factors were compared across Q3 cohorts.',
-        status: 'passed',
-        metric: '7 agent steps',
-      },
-      {
-        id: 'h-e7',
-        stage: 6,
-        title: 'Unsupported claim repaired',
-        description:
-          'One generated statement exceeded the available evidence.',
-        status: 'fixed',
-        decision: 'FIX',
-        metric: 'support · 0.47',
-        action: 'Claim regenerated',
-      },
-      {
-        id: 'h-e8',
-        stage: 6,
-        title: 'Final response verified',
-        description:
-          'Final claims and data handling passed verification.',
-        status: 'passed',
-        decision: 'ALLOW',
-        metric: 'support · 0.91',
-      },
-      {
-        id: 'h-e9',
-        stage: 7,
-        title: 'Outcome recorded',
-        description:
-          'Run outcome stored for future calibration.',
-        status: 'passed',
-      },
-    ],
-  },
-  {
-    id: 'CP-24074',
-    title: 'Debug payment service',
-    preview:
-      'Investigate the failing payment-service deployment tests.',
-    model: 'Claude',
-    timestamp: 'Yesterday · 7:41 PM',
-    messages: [
-      {
-        id: 'c1',
-        role: 'user',
-        content:
-          'Investigate the failing payment-service deployment tests.',
-      },
-      {
-        id: 'c2',
-        role: 'assistant',
-        content:
-          'The failing test originated in the configuration layer. The agent was paused before a production restart and resumed only after approval.',
-      },
-    ],
-    events: [
-      {
-        id: 'c-e1',
-        stage: 1,
-        title: 'Workspace verified',
-        description:
-          'Repository scope and employee permissions verified.',
-        status: 'passed',
-        decision: 'ALLOW',
-        metric: 'scope · repository',
-      },
-      {
-        id: 'c-e2',
-        stage: 5,
-        title: 'Agent inspected deployment logs',
-        description:
-          'The agent identified a configuration-related failure.',
-        status: 'passed',
-        metric: 'step · 5',
-      },
-      {
-        id: 'c-e3',
-        stage: 5,
-        title: 'Production restart proposed',
-        description:
-          'Agent proposed a production restart.',
-        status: 'ask',
-        decision: 'ASK',
-        metric: 'impact · HIGH',
-        action: 'Execution paused',
-      },
-      {
-        id: 'c-e4',
-        stage: 5,
-        title: 'Human approval recorded',
-        description:
-          'Employee approved continuation.',
-        status: 'passed',
-        decision: 'ALLOW',
-        action: 'Workflow resumed',
-      },
-      {
-        id: 'c-e5',
-        stage: 6,
-        title: 'Workflow completed',
-        description:
-          'The approved deployment action completed successfully.',
-        status: 'passed',
-        decision: 'ALLOW',
-      },
-    ],
-  },
-  {
-    id: 'CP-24061',
-    title: 'Competitor pricing research',
-    preview:
-      'Compare public competitor pricing with our current plan structure.',
-    model: 'GPT',
-    timestamp: 'Aug 26 · 2:18 PM',
-    messages: [
-      {
-        id: 'r1',
-        role: 'user',
-        content:
-          'Compare public competitor pricing with our current plan structure.',
-      },
-      {
-        id: 'r2',
-        role: 'assistant',
-        content:
-          'The workflow was stopped because a proposed source could not be verified as an approved external source.',
-      },
-    ],
-    events: [
-      {
-        id: 'r-e1',
-        stage: 1,
-        title: 'Research request accepted',
-        description:
-          'Market research workflow initialized.',
-        status: 'passed',
-        decision: 'ALLOW',
-      },
-      {
-        id: 'r-e2',
-        stage: 2,
-        title: 'Risk profile created',
-        description:
-          'Low-impact external research task.',
-        status: 'passed',
-        decision: 'ALLOW',
-        metric: 'impact · LOW',
-      },
-      {
-        id: 'r-e3',
-        stage: 3,
-        title: 'External source proposed',
-        description:
-          'Agent requested data from an unverified source.',
-        status: 'running',
-        metric: 'trust · LOW',
-      },
-      {
-        id: 'r-e4',
-        stage: 3,
-        title: 'Source blocked',
-        description:
-          'ControlPlane prevented unverified content from entering the workflow.',
-        status: 'blocked',
-        decision: 'BLOCK',
-        metric: 'trust · LOW',
-        action: 'Run terminated',
-      },
-    ],
-  },
-];
 
 const TASKS = [
   {
@@ -322,6 +71,14 @@ const TASKS = [
       'Test the new checkout feature against the approved test scenarios.',
     icon: '/stages/stage-6.svg',
     tone: 'peach',
+  },
+  {
+    id: 'production_change',
+    title: 'Production Change',
+    description: 'Request a change to a live production system.',
+    prompt: 'Deploy the new payment service to production.',
+    icon: '/stages/stage-5.svg',
+    tone: 'blue',
   },
 ] as const;
 
@@ -372,29 +129,54 @@ export default function EmployeeWorkspace() {
   const [model, setModel] = useState('Gemini');
   const [modelOpen, setModelOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<
-  'research' | 'debugging' | 'analysis' | 'testing' | null
+  'research' | 'debugging' | 'analysis' | 'testing' | 'production_change' | null
 >(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyItems, setHistoryItems] = useState<RunSummary[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Fix: the sidebar's Research/Coding/Data Analysis/History links all
-  // pointed at this same route with nothing to actually trigger their
-  // effect — they now carry a query param this reads once, then clears
-  // (so clicking the same sidebar link again still re-triggers it).
+  // The sidebar's Research/Coding/Data Analysis/Production Change/History
+  // links all point at this route, distinguished only by a query param —
+  // this reads it and opens the right view. Fix: this used to clear the
+  // param immediately after reading it, which meant the sidebar could never
+  // correctly show which section you're in (the signal vanished a moment
+  // after you clicked) — the URL is now the source of truth for "which
+  // section is active" for as long as you're actually in it. "Back to
+  // tasks" and starting a fresh run are what clear it now, not this effect.
   useEffect(() => {
     const task = searchParams.get('task');
-    const validTasks = ['research', 'debugging', 'analysis', 'testing'] as const;
+    const validTasks = ['research', 'debugging', 'analysis', 'testing', 'production_change'] as const;
     if (task && (validTasks as readonly string[]).includes(task)) {
       setSelectedTask(task as (typeof validTasks)[number]);
+    } else if (!task) {
+      setSelectedTask(null);
     }
-    if (searchParams.get('history') === 'open') {
-      setHistoryOpen(true);
-    }
-    if (task || searchParams.get('history')) {
-      setSearchParams({}, { replace: true });
-    }
+    setHistoryOpen(searchParams.get('history') === 'open');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
+
+  // Real history: fetch the persisted run list from the backend whenever
+  // the drawer opens, instead of a hardcoded array. This is lightweight —
+  // full events for a specific run are only fetched when it's clicked.
+  useEffect(() => {
+    if (!historyOpen) return;
+    let cancelled = false;
+    setHistoryLoading(true);
+    listRuns('employee')
+      .then((runs) => {
+        if (!cancelled) setHistoryItems(runs);
+      })
+      .catch((error) => {
+        console.error('Failed to load history:', error);
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [historyOpen]);
 
   const [runState, setRunState] = useState<
     'idle' | 'running' | 'completed' | 'blocked'
@@ -431,7 +213,7 @@ export default function EmployeeWorkspace() {
   setRunId(null);
 }
 
-  async function startRun(prompt: string) {
+  async function startRun(prompt: string, workflow?: string) {
   const trimmedPrompt = prompt.trim();
 
   if (!trimmedPrompt) return;
@@ -455,7 +237,7 @@ export default function EmployeeWorkspace() {
   setRunState('running');
 
   try {
-    const created = await createRun(trimmedPrompt, model);
+    const created = await createRun(trimmedPrompt, model, workflow);
 
     setRunId(created.run_id);
 
@@ -576,25 +358,42 @@ export default function EmployeeWorkspace() {
     startRun(value);
   }
 
-  function loadHistory(run: HistoricalRun) {
-  socketRef.current?.close();
-  socketRef.current = null;
+  async function loadHistory(run: RunSummary) {
+    socketRef.current?.close();
+    socketRef.current = null;
 
-  setMessages(run.messages);
-  setEvents(run.events);
-  setModel(run.model);
-  setRunState(
-    run.events.some((event) => event.status === 'blocked')
-      ? 'blocked'
-      : 'completed',
-  );
+    try {
+      const events = await getRunEvents(run.run_id);
 
-  const lastEvent = run.events[run.events.length - 1];
-  setActiveStage(lastEvent?.stage ?? null);
-  setHistoryOpen(false);
-  setHumanDecision(null);
-  setRunId(null);
-}
+      const messages: ChatMessage[] = [
+        { id: `${run.run_id}-user`, role: 'user', content: run.task },
+      ];
+      if (run.final_output && run.final_output.trim()) {
+        messages.push({
+          id: `${run.run_id}-assistant`,
+          role: 'assistant',
+          content: run.final_output,
+        });
+      }
+
+      setMessages(messages);
+      setEvents(events);
+      setModel(run.model_label);
+      setRunState(
+        events.some((event) => event.status === 'blocked')
+          ? 'blocked'
+          : 'completed',
+      );
+
+      const lastEvent = events[events.length - 1];
+      setActiveStage(lastEvent?.stage ?? null);
+      setSearchParams({});
+      setHumanDecision(null);
+      setRunId(null);
+    } catch (error) {
+      console.error('Failed to load historical run:', error);
+    }
+  }
 
   async function approveIntervention() {
     if (!interventionEvent || !runId) return;
@@ -652,7 +451,7 @@ export default function EmployeeWorkspace() {
 
                 <button
                   type="button"
-                  onClick={() => setHistoryOpen(false)}
+                  onClick={() => setSearchParams({})}
                   className="rounded-[9px] p-2 text-[#aaa79f] hover:bg-white hover:text-[#55524b]"
                   aria-label="Close history"
                 >
@@ -661,23 +460,39 @@ export default function EmployeeWorkspace() {
               </div>
 
               <div className="flex-1 overflow-y-auto p-2">
-                {HISTORY.map((run) => (
+                {historyLoading && (
+                  <p className="px-3 py-4 text-[10px] text-[#aaa79f]">
+                    Loading history…
+                  </p>
+                )}
+
+                {!historyLoading && historyItems.length === 0 && (
+                  <p className="px-3 py-4 text-[10px] text-[#aaa79f]">
+                    No previous tasks yet.
+                  </p>
+                )}
+
+                {historyItems.map((run) => (
                   <button
-                    key={run.id}
+                    key={run.run_id}
                     type="button"
                     onClick={() => loadHistory(run)}
                     className="mb-1 w-full rounded-[12px] px-3 py-3 text-left transition hover:bg-white"
                   >
                     <p className="truncate text-[11px] font-medium text-[#45423c]">
-                      {run.title}
+                      {run.task}
                     </p>
 
                     <p className="mt-1 line-clamp-2 text-[9px] leading-4 text-[#9b9891]">
-                      {run.preview}
+                      {run.final_output || 'No response yet'}
                     </p>
 
                     <p className="mt-2 text-[8px] text-[#b0ada5]">
-                      {run.model} · {run.timestamp}
+                      {run.model_label} ·{' '}
+                      {new Date(run.created_at).toLocaleString(undefined, {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })}
                     </p>
                   </button>
                 ))}
@@ -705,16 +520,16 @@ export default function EmployeeWorkspace() {
                 <EmptyState
                   onSelectTask={(taskId) => {
                     clearRun();
-                    setSelectedTask(taskId);
+                    setSearchParams({ task: taskId });
                   }}
                 />
               ) : runState === 'idle' && selectedTask !== null ? (
                 <SelectedTaskState
                   taskId={selectedTask}
-                  onStart={(prompt) => startRun(prompt)}
+                  onStart={(prompt, workflow) => startRun(prompt, workflow)}
                   onBack={() => {
                     clearRun();
-                    setSelectedTask(null);
+                    setSearchParams({});
                   }}
                 />
               ) : (
@@ -991,12 +806,16 @@ function SelectedTaskState({
     | 'research'
     | 'debugging'
     | 'analysis'
-    | 'testing';
-  onStart: (prompt: string) => void;
+    | 'testing'
+    | 'production_change';
+  onStart: (prompt: string, workflow?: string) => void;
   onBack: () => void;
 }) {
   const task = TASKS.find(
     (item) => item.id === taskId,
+  );
+  const [changeRequestText, setChangeRequestText] = useState(
+    task?.prompt ?? '',
   );
 
   if (!task) {
@@ -1022,11 +841,13 @@ function SelectedTaskState({
               'Identify key drivers',
               'Compare cohort behavior',
             ]
-          : [
-              'Run approved test cases',
-              'Inspect failed scenarios',
-              'Compare expected vs actual',
-            ];
+          : taskId === 'testing'
+            ? [
+                'Run approved test cases',
+                'Inspect failed scenarios',
+                'Compare expected vs actual',
+              ]
+            : []; // production_change has its own dedicated request UI below, not suggestion chips
 
   return (
     <section className="pt-3 sm:pt-6">
@@ -1100,34 +921,82 @@ function SelectedTaskState({
         </div>
       )}
 
-      <div className="mt-6">
-        <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#aaa79f]">
-          Suggested actions
-        </p>
+      {taskId === 'production_change' && (
+        <div className="mt-7 space-y-5">
+          <div className="rounded-[16px] border border-[#dccff0] bg-[#faf7ff] p-4">
+            <p className="text-[11px] font-semibold text-[#4e3a73]">
+              This is a governed production change.
+            </p>
+            <p className="mt-1 text-[11px] leading-5 text-[#7e7290]">
+              ControlPlane will assess impact and require your approval
+              before anything irreversible actually happens — nothing is
+              deployed just because a model suggests it.
+            </p>
+          </div>
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
-          {suggestions.map((suggestion) => (
-            <button
-              key={suggestion}
-              type="button"
-              onClick={() =>
-                onStart(
-                  `${suggestion} for this ${task.title.toLowerCase()} task.`,
-                )
-              }
-              className="rounded-[16px] border border-[#e4e2dc] bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-[#d7d1eb] hover:shadow-[0_8px_20px_rgba(0,0,0,0.05)]"
+          <div className="rounded-[16px] border border-[#e4e2dc] bg-white p-5">
+            <label
+              htmlFor="production-change-request"
+              className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#aaa79f]"
             >
-              <p className="text-[10px] font-medium text-[#4a4741]">
-                {suggestion}
-              </p>
+              Change request
+            </label>
+            <textarea
+              id="production-change-request"
+              value={changeRequestText}
+              onChange={(event) => setChangeRequestText(event.target.value)}
+              rows={3}
+              className="mt-2 block w-full resize-none rounded-[12px] border border-[#e4e2dc] bg-[#faf9f7] px-3.5 py-3 text-[13px] leading-6 text-[#4a4741] outline-none transition focus:border-[#8768dc] focus:bg-white focus:ring-2 focus:ring-[#eeeaff]"
+            />
 
-              <p className="mt-1 text-[8px] text-[#aaa69e]">
-                Start governed run →
-              </p>
+            <button
+              type="button"
+              disabled={!changeRequestText.trim()}
+              onClick={() => onStart(changeRequestText.trim(), 'production_change')}
+              className="mt-4 flex h-11 items-center justify-center rounded-[12px] bg-[#8768dc] px-5 text-[12px] font-medium text-white transition hover:bg-[#7959ce] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Submit change request
             </button>
-          ))}
+
+            <p className="mt-2 text-[9px] leading-4 text-[#aaa69e]">
+              Any production-affecting change submitted here is guaranteed a
+              ControlPlane impact review before it can proceed — regardless
+              of the exact wording.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
+
+      {suggestions.length > 0 && (
+        <div className="mt-6">
+          <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#aaa79f]">
+            Suggested actions
+          </p>
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            {suggestions.map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                onClick={() =>
+                  onStart(
+                    `${suggestion} for this ${task.title.toLowerCase()} task.`,
+                  )
+                }
+                className="rounded-[16px] border border-[#e4e2dc] bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-[#d7d1eb] hover:shadow-[0_8px_20px_rgba(0,0,0,0.05)]"
+              >
+                <p className="text-[10px] font-medium text-[#4a4741]">
+                  {suggestion}
+                </p>
+
+                <p className="mt-1 text-[8px] text-[#aaa69e]">
+                  Start governed run →
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -1139,7 +1008,8 @@ function EmptyState({
       | 'research'
       | 'debugging'
       | 'analysis'
-      | 'testing',
+      | 'testing'
+      | 'production_change',
   ) => void;
 }) {
   return (
@@ -1157,7 +1027,7 @@ function EmptyState({
       </div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {TASKS.map((task) => (
+        {TASKS.filter((task) => task.id !== 'production_change').map((task) => (
           <button
             key={task.title}
             type="button"

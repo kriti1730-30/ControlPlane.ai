@@ -115,6 +115,7 @@ async def run_pipeline(
     task: str,
     model_label: str,
     mode_hint: Optional[str] = None,
+    workflow: Optional[str] = None,
 ) -> None:
     """Thin safety wrapper: catches anything _run_pipeline_inner doesn't
     handle itself, so a bug in any stage becomes a visible blocked run
@@ -124,7 +125,7 @@ async def run_pipeline(
     fire-and-forget asyncio.create_task()."""
     tracker = _StageTracker()
     try:
-        await _run_pipeline_inner(run_id, actor_type, task, model_label, mode_hint, tracker)
+        await _run_pipeline_inner(run_id, actor_type, task, model_label, mode_hint, tracker, workflow)
     except ProviderRateLimited as exc:
         retry_note = f"Retry after {int(exc.retry_after)}s" if exc.retry_after else "Retry shortly"
         await _emit(run_id, CheckResult(
@@ -152,6 +153,7 @@ async def _run_pipeline_inner(
     model_label: str,
     mode_hint: Optional[str] = None,
     tracker: Optional[_StageTracker] = None,
+    workflow: Optional[str] = None,
 ) -> None:
     """The background task. Publishes events as it goes; the caller has
     already returned run_id to the client before this even starts."""
@@ -232,6 +234,17 @@ async def _run_pipeline_inner(
             envelope.proposed_actions = []  # plan mode: never let a proposed action through
         else:
             envelope.proposed_actions = [a for a in gen["proposed_actions"] if a.get("tool") != "none"]
+
+        # Deterministic, not model-inferred: this specific workflow entry
+        # point already tells us what kind of request this is — a real
+        # enterprise "deploy" button doesn't ask an LLM to re-guess that.
+        # The model's own text answer is untouched; only the action flag
+        # is guaranteed here rather than left to whether it chose to
+        # mention it in proposed_actions.
+        if workflow == "production_change" and envelope.risk.mode != "plan":
+            already_flagged = any(a.get("tool") == "deploy_production" for a in envelope.proposed_actions)
+            if not already_flagged:
+                envelope.proposed_actions.append({"tool": "deploy_production", "target": task})
     except LLMUnavailable:
         # Fix (checklist item 8): this used to fabricate a sentence that
         # LOOKED like an assistant answer even though no model ever ran.
